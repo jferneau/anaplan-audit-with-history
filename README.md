@@ -2,8 +2,7 @@
 
 A Python CLI that turns Anaplan's raw audit log — and, optionally, every
 model's change history — into report-ready data inside an Anaplan
-reporting model. Built and maintained by the Operational Excellence Group
-(OEG) Data Integration practice.
+reporting model.
 
 ---
 
@@ -365,13 +364,7 @@ Anaplan Community thread.
 
 ## Maintainer
 
-**Jon Ferneau** — Data Integration Principal, Operational Excellence
-Group (OEG).
-
-## Credits
-
-Original v1 implementation by Quin Eddy ([@QuinE](https://community.anaplan.com/discussion/155744/part-1-enhanced-reporting-of-the-anaplan-audit-log-summary))
-and Chris Stauffer, Anaplan OEG.
+It is expected that the downloader of this solution would be responsible for updating and mainting it themselves.
 
 ## License
 
