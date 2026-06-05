@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# Runtime data — never commit real credentials or databases
+settings.json
+*.db
+*.sqlite
+*.sqlite3
+.env
+.anaplan_audit/
+
+# Test / coverage artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Claude Code session metadata
+.claude/
+
+# Runtime logs and run-lock
+logs/
+*.lock
+
+# Internal session notes (not for public repo)
+session-notes.md
+doc-updates.md
+doc-updates-v3.md

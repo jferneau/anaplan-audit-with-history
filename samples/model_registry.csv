@@ -1,0 +1,4 @@
+model_id,model_name,workspace_id,workspace_name,last_synced_at
+8a81b09d5e2f4c001,Financial Planning,8a81b09d5e2f4a001,Acme Corp Production,2026-04-13T06:00:00Z
+8a81b09d5e2f4c002,Workforce Planning,8a81b09d5e2f4a001,Acme Corp Production,2026-04-13T06:00:00Z
+8a81b09d5e2f4c003,Supply Chain Model,8a81b09d5e2f4a002,Acme Corp Development,2026-04-13T06:00:00Z

@@ -1,0 +1,175 @@
+"""Tests for API client functions using respx mocks."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import httpx
+import respx
+
+from anaplan_audit.api.audit import fetch_audit_events
+from anaplan_audit.api.client import APIClient
+from anaplan_audit.api.cloudworks import list_integrations
+from anaplan_audit.api.scim import list_users
+from anaplan_audit.auth.models import AuthToken
+
+
+def _make_token() -> AuthToken:
+    """Return a non-expired test token."""
+    return AuthToken(
+        access_token="test-token",
+        expires_at=datetime.now(tz=UTC) + timedelta(hours=1),
+    )
+
+
+class TestFetchAuditEvents:
+    """Tests for fetch_audit_events pagination."""
+
+    def test_single_page(self) -> None:
+        """Single page of results is returned without extra requests."""
+        with respx.mock:
+            respx.get("https://audit.test.com/audit/api/1/events").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "events": [
+                            {"id": "evt-001", "eventTypeId": "CONN-1"},
+                            {"id": "evt-002", "eventTypeId": "CONN-2"},
+                        ]
+                    },
+                )
+            )
+            with APIClient(_make_token()) as client:
+                events = list(
+                    fetch_audit_events(
+                        client,
+                        "https://audit.test.com/audit/api/1",
+                        since_epoch=0,
+                        batch_size=100,
+                    )
+                )
+        assert len(events) == 2
+        assert events[0].id == "evt-001"
+
+    def test_empty_response_returns_no_events(self) -> None:
+        """Empty API response yields nothing."""
+        with respx.mock:
+            respx.get("https://audit.test.com/audit/api/1/events").mock(
+                return_value=httpx.Response(200, json={"events": []})
+            )
+            with APIClient(_make_token()) as client:
+                events = list(
+                    fetch_audit_events(
+                        client,
+                        "https://audit.test.com/audit/api/1",
+                        since_epoch=0,
+                        batch_size=100,
+                    )
+                )
+        assert events == []
+
+    def test_pagination(self) -> None:
+        """Paginator fetches subsequent pages until a short page."""
+        page1 = {"events": [{"id": f"evt-{i:03d}"} for i in range(2)]}
+        page2 = {"events": [{"id": "evt-002"}]}
+
+        with respx.mock:
+            route = respx.get("https://audit.test.com/audit/api/1/events").mock(
+                side_effect=[
+                    httpx.Response(200, json=page1),
+                    httpx.Response(200, json=page2),
+                ]
+            )
+            with APIClient(_make_token()) as client:
+                events = list(
+                    fetch_audit_events(
+                        client,
+                        "https://audit.test.com/audit/api/1",
+                        since_epoch=0,
+                        batch_size=2,
+                    )
+                )
+        assert route.call_count == 2
+        assert len(events) == 3
+
+
+class TestListUsers:
+    """Tests for SCIM list_users pagination."""
+
+    def test_single_page(self) -> None:
+        """All users are returned from a single-page response."""
+        with respx.mock:
+            respx.get("https://scim.test.com/Users").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "totalResults": 2,
+                        "Resources": [
+                            {"id": "u-001", "userName": "alice@test.com"},
+                            {"id": "u-002", "userName": "bob@test.com"},
+                        ],
+                    },
+                )
+            )
+            with APIClient(_make_token()) as client:
+                users = list_users(client, "https://scim.test.com")
+
+        assert len(users) == 2
+        assert users[0].userName == "alice@test.com"
+
+    def test_empty_response(self) -> None:
+        """Empty SCIM response returns an empty list."""
+        with respx.mock:
+            respx.get("https://scim.test.com/Users").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "totalResults": 0,
+                        "Resources": [],
+                    },
+                )
+            )
+            with APIClient(_make_token()) as client:
+                users = list_users(client, "https://scim.test.com")
+
+        assert users == []
+
+
+class TestListIntegrations:
+    """Tests for CloudWorks list_integrations."""
+
+    def test_returns_integrations(self) -> None:
+        """CloudWorks integrations are parsed correctly."""
+        with respx.mock:
+            respx.get("https://cw.test.com/integrations").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "integrations": [
+                            {
+                                "integrationId": "cw-001",
+                                "name": "Daily Sync",
+                                "type": "S3",
+                                "workspaceId": "ws-001",
+                                "modelId": "model-001",
+                            }
+                        ]
+                    },
+                )
+            )
+            with APIClient(_make_token()) as client:
+                integrations = list_integrations(client, "https://cw.test.com")
+
+        assert len(integrations) == 1
+        assert integrations[0].integrationId == "cw-001"
+
+    def test_empty_response(self) -> None:
+        """Empty CloudWorks response returns an empty list."""
+        with respx.mock:
+            respx.get("https://cw.test.com/integrations").mock(
+                return_value=httpx.Response(200, json={"integrations": []})
+            )
+            with APIClient(_make_token()) as client:
+                integrations = list_integrations(client, "https://cw.test.com")
+
+        assert integrations == []

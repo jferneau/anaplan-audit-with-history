@@ -1,0 +1,36 @@
+{
+    "events": [
+        {
+            "id": "audit-001",
+            "date": "2024-01-15T10:30:00Z",
+            "userId": "user-001",
+            "userName": "john.doe@example.com",
+            "eventTypeId": "1",
+            "eventType": "ModelOpen",
+            "objectId": "obj-001",
+            "objectName": "Revenue Model",
+            "objectType": "Model",
+            "ipAddress": "192.168.1.100",
+            "workspaceId": "ws-001",
+            "workspaceName": "Finance",
+            "modelId": "model-001",
+            "modelName": "Revenue Model"
+        },
+        {
+            "id": "audit-002",
+            "date": "2024-01-15T11:00:00Z",
+            "userId": "user-002",
+            "userName": "jane.smith@example.com",
+            "eventTypeId": "2",
+            "eventType": "ExportRun",
+            "objectId": "obj-002",
+            "objectName": "Budget Export",
+            "objectType": "Export",
+            "ipAddress": "192.168.1.101",
+            "workspaceId": "ws-001",
+            "workspaceName": "Finance",
+            "modelId": "model-001",
+            "modelName": "Revenue Model"
+        }
+    ]
+}

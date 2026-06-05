@@ -1,0 +1,9 @@
+record_id,anaplan_record_id,model_id,date_time_utc,user,description,security_change,previous_value,new_value,module_list,line_item_property,customer,export,import_action,data_types,table_name,object,captured_at
+a1b2c3d4e5f60001,1001,8a81b09d5e2f4c001,2026-04-12T14:32:00Z,jane.doe@acme.com,Changed line item formula,,SUM(Rev.Q1),SUM(Rev.Q1:Q4),Revenue Module,Formula,,,,,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60002,1002,8a81b09d5e2f4c001,2026-04-12T15:10:00Z,john.smith@acme.com,Added new list item,,,,Products List,,Customer A,,,,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60003,1003,8a81b09d5e2f4c002,2026-04-12T09:45:00Z,jane.doe@acme.com,Changed role assignment,true,Viewer,Editor,,,,,,,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60004,1004,8a81b09d5e2f4c003,2026-04-11T17:22:00Z,bob.wilson@acme.com,Deleted module line item,,Active,,Forecast Module,Summary,,,,,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60005,1005,8a81b09d5e2f4c003,2026-04-11T17:23:00Z,bob.wilson@acme.com,Updated import mapping,,Old Source,New Source,Demand Planning,,,,Revenue Import,,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60006,1006,8a81b09d5e2f4c004,2026-04-11T11:05:00Z,jane.doe@acme.com,Run export action,,,,,,,Revenue Export,,,,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60007,1007,8a81b09d5e2f4c004,2026-04-11T11:30:00Z,john.smith@acme.com,Changed line item data type,,Number,Text,Headcount Module,Employee Name,,,,Numeric,,2026-04-13T06:00:00Z
+a1b2c3d4e5f60008,1008,8a81b09d5e2f4c004,2026-04-10T16:00:00Z,bob.wilson@acme.com,Modified table structure,,,,,,,,,,,Grid View,Table,2026-04-13T06:00:00Z
