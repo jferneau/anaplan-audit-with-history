@@ -121,7 +121,7 @@ Set `authenticationMode: "basic"` in `settings.json`.
 
 4. The refresh token is encrypted with Fernet (AES-128-CBC + HMAC-SHA256) and stored locally in `~/.anaplan_audit/tokens.db`. The encryption keyfile lives at `~/.anaplan_audit/key` with `0600` permissions.
 
-5. Set `authenticationMode: "OAuth"` in `settings.json`. Subsequent runs are unattended.
+5. On success, `register` writes the client ID into `settings.json` as `oauthClientId` — the value the pipeline uses to refresh tokens on every run. Set `authenticationMode: "OAuth"` and subsequent runs are unattended.
 
 ---
 
@@ -241,6 +241,17 @@ Guide for the optional v3.1 line items.
 ---
 
 # 5. Troubleshooting
+
+## 5.0 Import completed but reported failure (v3.2+)
+
+As of v3.2, `run_import` and `run_process` poll the Anaplan task to
+completion and **raise when the Anaplan-side result is unsuccessful**
+(exit code 4). Before v3.2 the pipeline reported success even when the
+import loaded zero rows. If you see
+`import_failed_in_anaplan` with `failure_dump_available: true`, open
+the import action in the Anaplan model and download the failure dump —
+the usual causes are column-mapping drift or list items missing from
+the target model.
 
 ## 5.1 Zero records loaded — is this a failure?
 

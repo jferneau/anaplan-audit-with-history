@@ -174,5 +174,5 @@ def authenticate_cert(
 
     return AuthToken(
         access_token=token_value,
-        expires_at=datetime.now(tz=UTC) + timedelta(minutes=35),
+        expires_at=datetime.now(tz=UTC) + timedelta(minutes=AuthToken.TOKEN_LIFETIME_MINUTES),
     )

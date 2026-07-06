@@ -124,6 +124,13 @@ class Settings(BaseSettings):
     database: str = "anaplan_audit.db"
     lastRun: int = 0
     auditBatchSize: int = 1000
+    auditRetentionYears: int = 0
+    """Purge audit events older than this many years from SQLite.
+
+    ``0`` (the default) keeps every event forever — the historical v1/v3
+    behaviour.  When set, a timestamped backup is taken before each purge,
+    using the same rolling-backup window as Model History.
+    """
     workspaceModelFilterApproach: Literal["select", "skip"] = "select"
     workspaceModelCombos: list[WorkspaceModelCombo] = []
 

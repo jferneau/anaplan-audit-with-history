@@ -5,6 +5,69 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.0] — 2026-07-06 — Reliability + usability release
+
+Everything from the full code review that wasn't in the v3.1.1
+hot-fix batch: two more bug fixes, Anaplan-side failure detection,
+internal deduplication, and four customer-usability features.
+
+### Fixed
+
+- **Large model-history exports were silently truncated** —
+  `download_export_file` only fetched chunk 0. It now lists all
+  chunks and concatenates them in order (Anaplan splits files at
+  ~10 MB), falling back to chunk 0 for single-chunk files.
+- **`Retry-After` was carried but ignored** — the retry wait now
+  takes `max(exponential backoff, Retry-After)` on 429 responses,
+  so the pipeline never hammers a rate-limited endpoint early.
+
+### Added
+
+- **Anaplan-side failure detection.** `run_import` and `run_process`
+  now poll the task to completion and **raise (exit code 4) when the
+  Anaplan result is unsuccessful** — including logging
+  `failureDumpAvailable` so operators know to fetch the dump.
+  Previously the pipeline reported success even when an import loaded
+  zero rows.
+- **`anaplan-audit init`** — interactive wizard that writes a minimal
+  `settings.json` (tenant, auth mode, source/target, Model History
+  flag) and prints the next steps.
+- **Names-or-IDs.** `workspaceModelCombos` entries may reference
+  workspaces and models by display name; names resolve against the
+  live tenant at startup (exact match first, then case-insensitive).
+- **`--limit N` on `run`** — fetch at most N audit events, for
+  bounded first-run samples.
+- **`auditRetentionYears`** (default 0 = keep forever) — optional
+  purge of audit events beyond the window, with an automatic
+  timestamped backup first.
+- **Graceful non-POSIX failure** — on Windows the run lock now raises
+  a clear ConfigError ("requires Linux or macOS … use WSL") instead
+  of an ImportError at startup.
+- **GitHub Actions CI** — ruff + mypy + pytest + build + wheel smoke
+  test on every push/PR, with a README badge.
+- **CONTRIBUTING.md, SECURITY.md, Makefile** (`make check`,
+  `make docs` regenerates the .docx set from markdown).
+
+### Changed (internal)
+
+- Workspace/model metadata is fetched **once per run** and shared
+  between the audit and Model History pipelines (previously every
+  listing call happened twice on a full run, and repeated combos
+  re-listed the same workspace).
+- All SQLite connections go through a single `_connect()` helper —
+  WAL / synchronous / foreign-key pragmas can no longer drift between
+  call sites.
+- Auth flows share one HTTP helper (`auth/_http.py`) and the 35-minute
+  token lifetime is a single constant on `AuthToken`.
+- `AuditEvent` now declares exactly the top-level fields
+  `audit_query.sql` references (guaranteeing those columns always
+  exist) and drops nine phantom fields the API never returns at top
+  level.
+- Tests share `make_client()` / `make_token()` helpers from
+  `tests/conftest.py`. Suite is now 184 cases.
+
+---
+
 ## [3.1.1] — 2026-07-06 — Bug-fix release
 
 Five customer-facing fixes surfaced by a full code review. All are

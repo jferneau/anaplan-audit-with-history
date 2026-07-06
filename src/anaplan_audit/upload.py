@@ -11,7 +11,7 @@ import pandas as pd
 import structlog
 
 from anaplan_audit.api.client import APIClient
-from anaplan_audit.api.integration import run_import, upload_file_chunks
+from anaplan_audit.api.integration import upload_and_import
 from anaplan_audit.config import Settings
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
@@ -45,23 +45,14 @@ def upload_audit_data(
     csv_data = df.to_csv(index=False)
     log.info("upload_starting", row_count=len(df))
 
-    # Upload audit data
-    upload_file_chunks(
+    upload_and_import(
         client,
         integration_uri,
         target.workspaceId,
         target.modelId,
         target.objects.auditFileId,
-        csv_data,
-    )
-
-    # Run the audit import action
-    run_import(
-        client,
-        integration_uri,
-        target.workspaceId,
-        target.modelId,
         target.objects.auditImportId,
+        csv_data,
     )
 
     # Capture the run timestamp before writing it anywhere.
@@ -108,21 +99,14 @@ def _upload_last_run_to_anaplan(
     last_run_utc = datetime.fromtimestamp(last_run_epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     csv_data = f"last_run_epoch,last_run_utc\n{last_run_epoch},{last_run_utc}\n"
 
-    upload_file_chunks(
+    upload_and_import(
         client,
         settings.uris.integrationUri,
         target.workspaceId,
         target.modelId,
         file_id,
-        csv_data,
-    )
-
-    run_import(
-        client,
-        settings.uris.integrationUri,
-        target.workspaceId,
-        target.modelId,
         import_id,
+        csv_data,
     )
 
     log.info(

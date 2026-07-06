@@ -21,6 +21,9 @@ class AuthToken:
         refresh_token: OAuth refresh token, if applicable.
     """
 
+    #: Anaplan tokens are valid for this long, in every auth mode.
+    TOKEN_LIFETIME_MINUTES: ClassVar[int] = 35
+
     #: Refresh this many minutes before the token actually expires.
     REFRESH_MARGIN_MINUTES: ClassVar[int] = 5
 

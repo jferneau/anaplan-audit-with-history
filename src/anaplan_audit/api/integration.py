@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import structlog
@@ -263,8 +264,9 @@ def download_export_file(
     """Download the completed export file as a raw CSV string.
 
     In Anaplan's Integration API v2, a completed export writes its output
-    to a file whose ID matches the export action ID.  The content is
-    retrieved as a single chunk.
+    to a file whose ID matches the export action ID.  Anaplan splits large
+    files into ~10 MB chunks — all chunks are downloaded in order and
+    concatenated, so large model-history exports are never truncated.
 
     Args:
         client: An authenticated :class:`APIClient`.
@@ -276,10 +278,113 @@ def download_export_file(
     Returns:
         Raw CSV text content of the export file.
     """
-    resp = client.get(
-        f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/files/{export_id}/chunks/0"
+    base = f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/files/{export_id}"
+
+    resp = client.get(f"{base}/chunks")
+    chunks = resp.json().get("chunks", [])
+    if not chunks:
+        # Older API behaviour / single-chunk files: fall back to chunk 0.
+        return client.get(f"{base}/chunks/0").text
+
+    parts: list[str] = []
+    for chunk in chunks:
+        chunk_id = chunk.get("id", "")
+        parts.append(client.get(f"{base}/chunks/{chunk_id}").text)
+
+    if len(parts) > 1:
+        logger.info("export_file_multi_chunk_download", chunk_count=len(parts))
+    return "".join(parts)
+
+
+# Seconds between polls of a running import/process task.
+_ACTION_POLL_INTERVAL: float = 5.0
+
+
+def _run_action_task(
+    client: APIClient,
+    base_url: str,
+    *,
+    action_kind: str,
+    action_id: str,
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    """Trigger an import/process task and poll it to completion.
+
+    Anaplan action tasks "complete" even when the underlying import
+    failed — the outcome lives in ``result.successful`` and per-file
+    ``details``.  Both a FAILED task state and an unsuccessful result
+    raise, so callers (and schedulers watching exit codes) learn about
+    Anaplan-side failures instead of reporting success on a run that
+    loaded zero rows.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        base_url: Action URL up to and including the action ID
+            (e.g. ``…/models/M/imports/112000000041``).
+        action_kind: ``"import"`` or ``"process"`` — used in logs/errors.
+        action_id: The action ID (for logs/errors).
+        timeout_seconds: Max seconds to wait for the task to finish.
+
+    Returns:
+        The terminal task dict (``taskState == "COMPLETE"``, successful).
+
+    Raises:
+        UnexpectedResponseError: If the task fails, the result is
+            unsuccessful, or the timeout is reached.
+    """
+    resp = client.post(f"{base_url}/tasks", json={"localeName": "en_US"})
+    task_id: str = resp.json().get("task", {}).get("taskId", "")
+    if not task_id:
+        # Some responses return taskId at the top level.
+        task_id = resp.json().get("taskId", "")
+    log = logger.bind(action_kind=action_kind, action_id=action_id, task_id=task_id)
+    log.info(f"{action_kind}_started")
+
+    if not task_id:
+        # No task ID to poll — legacy response shape. Return what we got.
+        log.warning(f"{action_kind}_task_id_missing", note="cannot poll for completion")
+        return dict(resp.json())
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        status_resp = client.get(f"{base_url}/tasks/{task_id}")
+        task: dict[str, Any] = status_resp.json().get("task", {})
+        state = task.get("taskState", "")
+
+        if state == "COMPLETE":
+            result = task.get("result", {})
+            successful = result.get("successful", True)
+            dump_available = result.get("failureDumpAvailable", False)
+            if not successful:
+                log.error(
+                    f"{action_kind}_failed_in_anaplan",
+                    failure_dump_available=dump_available,
+                    details=result.get("details", []),
+                )
+                raise UnexpectedResponseError(
+                    f"Anaplan {action_kind} {action_id} completed unsuccessfully. "
+                    "Check the failure dump in the Anaplan model.",
+                    context={
+                        "action_id": action_id,
+                        "task_id": task_id,
+                        "failure_dump_available": str(dump_available),
+                    },
+                )
+            log.info(f"{action_kind}_complete", failure_dump_available=dump_available)
+            return task
+
+        if state in ("FAILED", "CANCELLED"):
+            raise UnexpectedResponseError(
+                f"Anaplan {action_kind} {action_id} task ended in state {state}.",
+                context={"action_id": action_id, "task_id": task_id, "task_state": state},
+            )
+
+        time.sleep(_ACTION_POLL_INTERVAL)
+
+    raise UnexpectedResponseError(
+        f"Anaplan {action_kind} {action_id} did not complete within {timeout_seconds}s.",
+        context={"action_id": action_id, "task_id": task_id},
     )
-    return resp.text
 
 
 def run_process(
@@ -289,7 +394,7 @@ def run_process(
     model_id: str,
     process_id: str,
 ) -> dict[str, Any]:
-    """Execute an Anaplan process and return the task result.
+    """Execute an Anaplan process and poll it to completion.
 
     Args:
         client: An authenticated :class:`APIClient`.
@@ -299,16 +404,14 @@ def run_process(
         process_id: The process ID to execute.
 
     Returns:
-        The process task result as a dict.
+        The terminal task dict.
+
+    Raises:
+        UnexpectedResponseError: If the process fails inside Anaplan or
+            does not complete within the timeout.
     """
-    resp = client.post(
-        f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}"
-        f"/processes/{process_id}/tasks",
-        json={"localeName": "en_US"},
-    )
-    result: dict[str, Any] = resp.json()
-    logger.info("process_started", process_id=process_id)
-    return result
+    base = f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/processes/{process_id}"
+    return _run_action_task(client, base, action_kind="process", action_id=process_id)
 
 
 def run_import(
@@ -318,7 +421,7 @@ def run_import(
     model_id: str,
     import_id: str,
 ) -> dict[str, Any]:
-    """Kick off an import action in the target model.
+    """Kick off an import action and poll it to completion.
 
     Args:
         client: An authenticated :class:`APIClient`.
@@ -328,12 +431,37 @@ def run_import(
         import_id: The import action ID.
 
     Returns:
-        The import task result as a dict.
+        The terminal task dict.
+
+    Raises:
+        UnexpectedResponseError: If the import fails inside Anaplan or
+            does not complete within the timeout.
     """
-    resp = client.post(
-        f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/imports/{import_id}/tasks",
-        json={"localeName": "en_US"},
-    )
-    result: dict[str, Any] = resp.json()
-    logger.info("import_started", import_id=import_id)
-    return result
+    base = f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/imports/{import_id}"
+    return _run_action_task(client, base, action_kind="import", action_id=import_id)
+
+
+def upload_and_import(
+    client: APIClient,
+    integration_uri: str,
+    workspace_id: str,
+    model_id: str,
+    file_id: str,
+    import_id: str,
+    data: str,
+) -> None:
+    """Upload a CSV payload and run its import action to completion.
+
+    The shared sequence behind every "push data into Anaplan" call site.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        integration_uri: Base URI for the Integration API.
+        workspace_id: Anaplan workspace ID.
+        model_id: Anaplan model ID.
+        file_id: Target file ID in the model.
+        import_id: Import action to run after the upload.
+        data: CSV-formatted string payload.
+    """
+    upload_file_chunks(client, integration_uri, workspace_id, model_id, file_id, data)
+    run_import(client, integration_uri, workspace_id, model_id, import_id)

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-import fcntl
 import importlib.resources
 import os
 import sqlite3
 import threading
 import time
+
+try:
+    import fcntl
+
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows
+    _HAS_FCNTL = False
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
 from io import StringIO
@@ -40,6 +46,7 @@ from anaplan_audit.transform.loader import (
     backup_database,
     ensure_model_history_tables,
     load_to_sqlite,
+    purge_old_audit_events,
     purge_old_history,
     upsert_model_history,
 )
@@ -74,6 +81,11 @@ class _RunLock:
         self._fd: int | None = None
 
     def __enter__(self) -> _RunLock:
+        if not _HAS_FCNTL:  # pragma: no cover — Windows
+            raise ConfigError(
+                "anaplan-audit requires Linux or macOS (the run lock uses "
+                "POSIX fcntl). Run inside WSL on Windows hosts.",
+            )
         self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR)
         try:
             fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -110,6 +122,7 @@ def run(
     log: structlog.stdlib.BoundLogger,
     *,
     dry_run: bool = False,
+    limit: int | None = None,
 ) -> int:
     """Execute the pipeline according to the enabled feature flags.
 
@@ -144,7 +157,7 @@ def run(
     db_path = Path(settings.database)
 
     with _RunLock(db_path):
-        return _run_locked(settings, log, db_path=db_path, dry_run=dry_run)
+        return _run_locked(settings, log, db_path=db_path, dry_run=dry_run, limit=limit)
 
 
 def _run_locked(
@@ -153,6 +166,7 @@ def _run_locked(
     *,
     db_path: Path,
     dry_run: bool,
+    limit: int | None = None,
 ) -> int:
     """Run the pipeline with the database lock already held."""
     # Step 1: Authenticate
@@ -170,13 +184,20 @@ def _run_locked(
         with factory_lock:
             return _authenticate(settings)
 
+    # Metadata lookups shared between the audit and model history pipelines
+    # so workspaces/models are listed exactly once per run.
+    combos: list[WorkspaceModelCombo] | None = None
+    ws_names: dict[str, str] = {}
+    model_names: dict[str, str] = {}
+
     with APIClient(token, token_factory=_token_factory) as client:
         # Steps 2-6: Audit pipeline (skipped when auditEnabled = false)
         if settings.auditEnabled:
             # Step 2: Fetch metadata
             log.info("pipeline_step_start", step="fetch_metadata")
             t0 = time.monotonic()
-            datasets = _fetch_metadata(client, settings)
+            combos = _resolve_combos(client, settings)
+            datasets, ws_names, model_names = _fetch_metadata(client, settings, combos)
             log.info("pipeline_step_done", step="fetch_metadata", duration_ms=_elapsed(t0))
 
             # Step 3: Fetch audit events
@@ -188,6 +209,7 @@ def _run_locked(
                     settings.uris.auditUri,
                     since_epoch=settings.lastRun,
                     batch_size=settings.auditBatchSize,
+                    max_events=limit,
                 )
             )
 
@@ -245,6 +267,14 @@ def _run_locked(
                     t0 = time.monotonic()
                     upload_audit_data(client, result_df, settings)
                     log.info("pipeline_step_done", step="upload", duration_ms=_elapsed(t0))
+
+            # Optional audit-event retention (0 = keep forever).
+            if settings.auditRetentionYears > 0 and not dry_run:
+                try:
+                    backup_database(db_path, max_backups=settings.modelHistory.maxBackupsToKeep)
+                    purge_old_audit_events(db_path, settings.auditRetentionYears)
+                except Exception as exc:
+                    log.warning("audit_retention_purge_error", error=str(exc))
         else:
             log.info("audit_disabled_skipping_steps_2_to_6")
 
@@ -253,7 +283,15 @@ def _run_locked(
         if mh_cfg.enabled and not dry_run:
             log.info("pipeline_step_start", step="model_history")
             t0 = time.monotonic()
-            _run_model_history(client, settings, db_path, log)
+            _run_model_history(
+                client,
+                settings,
+                db_path,
+                log,
+                combos=combos,
+                ws_names=ws_names,
+                model_names=model_names,
+            )
             log.info("pipeline_step_done", step="model_history", duration_ms=_elapsed(t0))
         elif mh_cfg.enabled and dry_run:
             log.info("dry_run_skip_model_history")
@@ -336,20 +374,30 @@ def _authenticate(settings: Settings) -> AuthToken:
 def _fetch_metadata(
     client: APIClient,
     settings: Settings,
-) -> dict[str, pd.DataFrame]:
-    """Fetch all metadata datasets.
+    combos: list[WorkspaceModelCombo],
+) -> tuple[dict[str, pd.DataFrame], dict[str, str], dict[str, str]]:
+    """Fetch all metadata datasets plus name lookups.
+
+    The workspace and model name lookups are returned so the model history
+    pipeline can reuse them instead of re-listing the same workspaces and
+    models (previously every metadata call happened twice on a full run).
 
     Args:
         client: An authenticated API client.
         settings: Application settings.
+        combos: Workspace/model combos already resolved by the caller.
 
     Returns:
-        A dict mapping table names to DataFrames.
+        A three-tuple ``(datasets, ws_names, model_names)`` where
+        ``datasets`` maps table names to DataFrames and the two lookups
+        map IDs to display names.
     """
     uri = settings.uris.integrationUri
-    combos = _resolve_combos(client, settings)
 
-    workspaces_data = [w.model_dump() for w in list_workspaces(client, uri)]
+    workspaces = list_workspaces(client, uri)
+    workspaces_data = [w.model_dump() for w in workspaces]
+    ws_names = {w.id: w.name for w in workspaces}
+
     users_data = [u.model_dump() for u in list_users(client, settings.uris.scimUri)]
     cloudworks_data = [
         c.model_dump() for c in list_integrations(client, settings.uris.cloudWorksUri)
@@ -364,29 +412,34 @@ def _fetch_metadata(
     all_models: list[dict[str, object]] = []
     all_actions: list[dict[str, object]] = []
     all_processes: list[dict[str, object]] = []
+    model_names: dict[str, str] = {}
 
-    for combo in combos:
-        models = list_models(client, uri, combo.workspaceId)
+    # Combos can repeat a workspace; list each workspace's models only once.
+    unique_workspace_ids = list(dict.fromkeys(c.workspaceId for c in combos))
+
+    for ws_id in unique_workspace_ids:
+        models = list_models(client, uri, ws_id)
         for m in models:
+            model_names[m.id] = m.name
             m_dict = m.model_dump()
-            m_dict["workspaceId"] = combo.workspaceId
+            m_dict["workspaceId"] = ws_id
             all_models.append(m_dict)
 
-            actions = list_actions(client, uri, combo.workspaceId, m.id)
+            actions = list_actions(client, uri, ws_id, m.id)
             for a in actions:
                 a_dict = a.model_dump()
-                a_dict["workspaceId"] = combo.workspaceId
+                a_dict["workspaceId"] = ws_id
                 a_dict["model_id"] = m.id  # SQL: a.id || a.model_id
                 all_actions.append(a_dict)
 
-            processes = list_processes(client, uri, combo.workspaceId, m.id)
+            processes = list_processes(client, uri, ws_id, m.id)
             for p in processes:
                 p_dict = p.model_dump()
-                p_dict["workspaceId"] = combo.workspaceId
+                p_dict["workspaceId"] = ws_id
                 p_dict["modelId"] = m.id
                 all_processes.append(p_dict)
 
-    return {
+    datasets = {
         "workspaces": pd.DataFrame(workspaces_data),
         "users": pd.DataFrame(users_data),
         "cloudworks": pd.DataFrame(cloudworks_data),  # SQL: cloudworks cw
@@ -395,6 +448,7 @@ def _fetch_metadata(
         "processes": pd.DataFrame(all_processes),
         "act_codes": activity_df,  # SQL: act_codes ac
     }
+    return datasets, ws_names, model_names
 
 
 def _resolve_combos(
@@ -403,15 +457,22 @@ def _resolve_combos(
 ) -> list[WorkspaceModelCombo]:
     """Resolve workspace/model combos based on filter approach.
 
+    In ``select`` mode, each combo may reference the workspace and model by
+    **ID or display name** — names are resolved to IDs against the live
+    tenant, so customers don't need to dig IDs out of URLs.
+
     Args:
         client: An authenticated API client.
         settings: Application settings.
 
     Returns:
-        The list of workspace/model combos to process.
+        The list of workspace/model combos to process (always IDs).
+
+    Raises:
+        ConfigError: If a workspace or model name/ID cannot be resolved.
     """
     if settings.workspaceModelFilterApproach == "select":
-        return settings.workspaceModelCombos
+        return _resolve_names_to_ids(client, settings, settings.workspaceModelCombos)
 
     # "skip" mode — get all workspaces, exclude the listed combos
     skip_set = {(c.workspaceId, c.modelId) for c in settings.workspaceModelCombos}
@@ -424,6 +485,75 @@ def _resolve_combos(
                 result.append(WorkspaceModelCombo(workspaceId=ws.id, modelId=m.id))
 
     return result
+
+
+def _resolve_names_to_ids(
+    client: APIClient,
+    settings: Settings,
+    combos: list[WorkspaceModelCombo],
+) -> list[WorkspaceModelCombo]:
+    """Translate name-based combos to ID-based combos.
+
+    Each combo value is first checked against known IDs; anything that
+    isn't an ID is looked up as a display name (exact match first, then
+    case-insensitive).
+
+    Args:
+        client: An authenticated API client.
+        settings: Application settings.
+        combos: Combos as configured — IDs, names, or a mix.
+
+    Returns:
+        Combos with both fields guaranteed to be IDs.
+
+    Raises:
+        ConfigError: If any workspace or model cannot be resolved.
+    """
+    if not combos:
+        return combos
+
+    uri = settings.uris.integrationUri
+    workspaces = list_workspaces(client, uri)
+    ws_ids = {w.id for w in workspaces}
+    ws_by_name = {w.name: w.id for w in workspaces}
+    ws_by_name_ci = {w.name.lower(): w.id for w in workspaces}
+
+    resolved: list[WorkspaceModelCombo] = []
+    for combo in combos:
+        ws_ref = combo.workspaceId
+        if ws_ref in ws_ids:
+            ws_id = ws_ref
+        else:
+            maybe = ws_by_name.get(ws_ref) or ws_by_name_ci.get(ws_ref.lower())
+            if maybe is None:
+                raise ConfigError(
+                    f"Workspace '{ws_ref}' not found by ID or name.",
+                    context={"workspace": ws_ref},
+                )
+            ws_id = maybe
+            logger.info("workspace_name_resolved", name=ws_ref, workspace_id=ws_id)
+
+        models = list_models(client, uri, ws_id)
+        model_ids = {m.id for m in models}
+        m_by_name = {m.name: m.id for m in models}
+        m_by_name_ci = {m.name.lower(): m.id for m in models}
+
+        m_ref = combo.modelId
+        if m_ref in model_ids:
+            m_id = m_ref
+        else:
+            maybe = m_by_name.get(m_ref) or m_by_name_ci.get(m_ref.lower())
+            if maybe is None:
+                raise ConfigError(
+                    f"Model '{m_ref}' not found by ID or name in workspace {ws_id}.",
+                    context={"model": m_ref, "workspace_id": ws_id},
+                )
+            m_id = maybe
+            logger.info("model_name_resolved", name=m_ref, model_id=m_id)
+
+        resolved.append(WorkspaceModelCombo(workspaceId=ws_id, modelId=m_id))
+
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +592,10 @@ def _run_model_history(
     settings: Settings,
     db_path: Path,
     log: structlog.stdlib.BoundLogger,
+    *,
+    combos: list[WorkspaceModelCombo] | None = None,
+    ws_names: dict[str, str] | None = None,
+    model_names: dict[str, str] | None = None,
 ) -> None:
     """Run the full model history extract-transform-load sequence.
 
@@ -496,28 +630,31 @@ def _run_model_history(
         log.warning("model_history_schema_error", error=str(exc))
         return
 
-    combos = _resolve_combos(client, settings)
+    if combos is None:
+        combos = _resolve_combos(client, settings)
 
-    # Build workspace + model name lookups for logging.
-    try:
-        workspaces = list_workspaces(client, uri)
-        ws_names = {w.id: w.name for w in workspaces}
-    except Exception as exc:
-        log.warning("model_history_workspace_lookup_error", error=str(exc))
-        ws_names = {}
-
-    model_names: dict[str, str] = {}
-    for combo in combos:
+    # Reuse lookups from the audit metadata fetch when available; only
+    # re-list when the audit pipeline was disabled this run.
+    if not ws_names:
         try:
-            models = list_models(client, uri, combo.workspaceId)
-            for m in models:
-                model_names[m.id] = m.name
+            workspaces = list_workspaces(client, uri)
+            ws_names = {w.id: w.name for w in workspaces}
         except Exception as exc:
-            log.warning(
-                "model_history_model_lookup_error",
-                workspace_id=combo.workspaceId,
-                error=str(exc),
-            )
+            log.warning("model_history_workspace_lookup_error", error=str(exc))
+            ws_names = {}
+
+    if not model_names:
+        model_names = {}
+        for ws_id in dict.fromkeys(c.workspaceId for c in combos):
+            try:
+                for m in list_models(client, uri, ws_id):
+                    model_names[m.id] = m.name
+            except Exception as exc:
+                log.warning(
+                    "model_history_model_lookup_error",
+                    workspace_id=ws_id,
+                    error=str(exc),
+                )
 
     # --- Parallel export + normalize ---
     # Collect successful normalized results and per-model errors separately.

@@ -18,6 +18,7 @@ def fetch_audit_events(
     *,
     since_epoch: int,
     batch_size: int,
+    max_events: int | None = None,
 ) -> Iterator[AuditEvent]:
     """Fetch audit events from the Anaplan Audit API.
 
@@ -28,6 +29,9 @@ def fetch_audit_events(
         audit_uri: Base URI for the Audit API.
         since_epoch: Fetch events since this Unix epoch (seconds).
         batch_size: Number of events to request per page.
+        max_events: Stop after yielding this many events.  ``None`` (the
+            default) fetches everything.  Used by ``run --limit`` so
+            first-time customers can pull a bounded sample.
 
     Yields:
         Individual :class:`AuditEvent` instances.
@@ -53,6 +57,13 @@ def fetch_audit_events(
         for raw in events:
             yield AuditEvent.model_validate(raw)
             total += 1
+            if max_events is not None and total >= max_events:
+                logger.info(
+                    "audit_events_fetch_capped",
+                    total_count=total,
+                    max_events=max_events,
+                )
+                return
 
         if len(events) < batch_size:
             break

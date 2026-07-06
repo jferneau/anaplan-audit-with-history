@@ -57,9 +57,26 @@ def _before_sleep(retry_state: RetryCallState) -> None:
     )
 
 
+_base_wait = wait_exponential_jitter(initial=1, max=16)
+
+
+def _wait_honoring_retry_after(retry_state: RetryCallState) -> float:
+    """Exponential backoff with jitter, floored by any Retry-After header.
+
+    When Anaplan returns 429 with a Retry-After value, waiting less than
+    that value guarantees another 429 — so the server-provided value acts
+    as a lower bound on the computed wait.
+    """
+    wait = _base_wait(retry_state)
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, RateLimitError) and exc.retry_after is not None:
+        wait = max(wait, exc.retry_after)
+    return wait
+
+
 _retry_policy = retry(
     stop=stop_after_attempt(5),
-    wait=wait_exponential_jitter(initial=1, max=16),
+    wait=_wait_honoring_retry_after,
     retry=retry_if_exception(_is_retryable),
     before_sleep=_before_sleep,
     reraise=True,

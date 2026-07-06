@@ -21,7 +21,7 @@ date: "June 2026"
 git clone https://github.com/jferneau/anaplan-audit-with-history.git
 cd anaplan-audit-with-history
 uv sync                          # installs runtime + dev deps
-uv run pytest                    # expected: 150+ tests passing
+uv run pytest                    # expected: 184+ tests passing
 uv run mypy src/                 # expected: no issues found
 uv run ruff check src/ tests/    # expected: all checks passed
 ```
@@ -42,7 +42,7 @@ without additional setup.
 ## 2.1 Running tests
 
 ```bash
-uv run pytest                                    # all 150+ tests
+uv run pytest                                    # all 184+ tests
 uv run pytest tests/test_config.py               # one file
 uv run pytest -k "test_config_validation"        # by name pattern
 uv run pytest -x                                 # stop on first failure
@@ -69,6 +69,8 @@ uv run pytest --cov=src/anaplan_audit --cov-report=term-missing
 | `test_model_history_service.py` | Export trigger, polling, download |
 | `test_model_history_transform.py` | Normalize output schema, column mapping, dedup |
 | `test_model_history_transform_streaming.py` | `csv.reader` streaming, short-row padding |
+| `test_v311_bugfixes.py` | v3.1.1 regressions: `oauthClientId`, `lastRun` source path, default URIs, cert-path validation |
+| `test_v32_improvements.py` | v3.2 regressions: multi-chunk download, Retry-After floor, import polling, name resolution, audit retention, `--limit`, init wizard |
 
 ## 2.3 New v3.1 tests in `test_transform.py`
 
@@ -91,15 +93,15 @@ test_known_optional_columns_predeclared
 
 - **Mock all HTTP with `respx`.** Never make live Anaplan API calls in tests.
 - **Use the `auth_token` fixture** (`AuthToken(access_token="test-token", expires_at=now+1h)`) for any test that needs a pre-authenticated client.
-- **Use the `_make_client()` helper** (defined per test module) to construct `APIClient` instances:
+- **Use the shared `make_client()` / `make_token()` helpers from `tests/conftest.py`** to construct `APIClient` instances (v3.2 — replaces the per-module `_make_client()` copies):
 
   ```python
-  def _make_client(token=None) -> APIClient:
-      token = token or AuthToken(
-          access_token="test-token",
-          expires_at=datetime.now(UTC) + timedelta(hours=1),
-      )
-      return APIClient(base_url="https://api.anaplan.com", token=token)
+  from tests.conftest import make_client
+
+  with respx.mock:
+      ...
+      with make_client() as client:
+          result = some_api_call(client, ...)
   ```
 
 - **SQLite tests use pytest's `tmp_path` fixture** — never write to a shared on-disk database.

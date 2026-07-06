@@ -41,6 +41,21 @@ _KNOWN_OPTIONAL_EVENT_COLUMNS: list[str] = [
 ]
 
 
+def _connect(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection with the standard pragmas applied.
+
+    WAL journal mode (concurrent reads during writes), ``synchronous=NORMAL``
+    (safe for this workload, ~3x faster than FULL), and ``foreign_keys=ON``
+    (enforced on the model history tables).  Every write path in this module
+    goes through here so the pragmas can never drift between call sites.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
 def _sanitize_for_sqlite(df: pd.DataFrame) -> pd.DataFrame:
     """Convert any column that contains dicts or lists to JSON strings.
 
@@ -82,12 +97,7 @@ def load_to_sqlite(db_path: Path, datasets: dict[str, pd.DataFrame]) -> None:
     """
     current_table = "<unknown>"
     try:
-        with closing(sqlite3.connect(str(db_path))) as conn:
-            # Performance pragmas — WAL is persistent; synchronous resets each
-            # connection but the cost is negligible.
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-
+        with closing(_connect(db_path)) as conn:
             for table_name, df in datasets.items():
                 current_table = table_name
                 if table_name == _EVENTS_TABLE:
@@ -272,10 +282,7 @@ def ensure_model_history_tables(db_path: Path) -> None:
     Args:
         db_path: Path to the SQLite database file.
     """
-    with closing(sqlite3.connect(str(db_path))) as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA foreign_keys=ON")
+    with closing(_connect(db_path)) as conn:
         conn.execute(_MODEL_REGISTRY_DDL)
         conn.execute(_MODEL_HISTORY_LIST_DDL)
         conn.execute(_MODEL_HISTORY_NORMALIZED_DDL)
@@ -325,11 +332,7 @@ def upsert_model_history(
         SQLiteLoadError: If any upsert operation fails.
     """
     try:
-        with closing(sqlite3.connect(str(db_path))) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-
+        with closing(_connect(db_path)) as conn:
             # model_registry — replace on re-run to update last_synced_at
             for _, row in model_registry_df.iterrows():
                 conn.execute(
@@ -490,8 +493,7 @@ def purge_old_history(db_path: Path, retention_years: int = 2) -> None:
     """
     cutoff = (datetime.now(UTC) - timedelta(days=retention_years * 365)).isoformat()
 
-    with closing(sqlite3.connect(str(db_path))) as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
+    with closing(_connect(db_path)) as conn:
         cur_norm = conn.execute(
             "DELETE FROM model_history_normalized WHERE date_time_utc < ?",
             (cutoff,),
@@ -507,4 +509,40 @@ def purge_old_history(db_path: Path, retention_years: int = 2) -> None:
         cutoff=cutoff,
         normalized_deleted=cur_norm.rowcount,
         list_deleted=cur_list.rowcount,
+    )
+
+
+def purge_old_audit_events(db_path: Path, retention_years: int) -> None:
+    """Delete audit events older than the retention window.
+
+    No-op when ``retention_years`` is 0 or the events table doesn't exist.
+    ``eventDate`` is epoch milliseconds, so the cutoff is computed in ms.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        retention_years: Number of years to retain.  ``0`` disables purging.
+    """
+    if retention_years <= 0:
+        return
+
+    cutoff_ms = int((datetime.now(UTC) - timedelta(days=retention_years * 365)).timestamp() * 1000)
+
+    with closing(_connect(db_path)) as conn:
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (_EVENTS_TABLE,),
+        ).fetchone()
+        if not table_exists:
+            return
+        cur = conn.execute(
+            f"DELETE FROM {_EVENTS_TABLE} WHERE eventDate < ?",
+            (cutoff_ms,),
+        )
+        conn.commit()
+
+    logger.info(
+        "audit_events_purged",
+        cutoff_ms=cutoff_ms,
+        retention_years=retention_years,
+        deleted=cur.rowcount,
     )

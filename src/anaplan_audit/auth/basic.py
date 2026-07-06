@@ -5,9 +5,9 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime, timedelta
 
-import httpx
 import structlog
 
+from anaplan_audit.auth._http import auth_post
 from anaplan_audit.auth.models import AuthToken
 from anaplan_audit.config import AnaplanUris
 from anaplan_audit.exceptions import BasicAuthError
@@ -36,20 +36,12 @@ def authenticate_basic(
     encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
     headers = {"Authorization": f"Basic {encoded}"}
 
-    try:
-        with httpx.Client(http2=True, timeout=60.0) as client:
-            resp = client.post(uris.authServiceUri, headers=headers)
-            resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise BasicAuthError(
-            f"Basic auth failed: HTTP {exc.response.status_code}",
-            context={"status_code": exc.response.status_code},
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise BasicAuthError(
-            f"Basic auth request error: {exc}",
-            context={"error": str(exc)},
-        ) from exc
+    resp = auth_post(
+        uris.authServiceUri,
+        error_cls=BasicAuthError,
+        error_label="Basic auth",
+        headers=headers,
+    )
 
     data = resp.json()
     token_info = data.get("tokenInfo", data)
@@ -57,5 +49,5 @@ def authenticate_basic(
 
     return AuthToken(
         access_token=token_info["tokenValue"],
-        expires_at=datetime.now(tz=UTC) + timedelta(minutes=35),
+        expires_at=datetime.now(tz=UTC) + timedelta(minutes=AuthToken.TOKEN_LIFETIME_MINUTES),
     )

@@ -177,12 +177,14 @@ src/anaplan_audit/
 | `anaplanTenantName` | string | (required) | Tenant name. Injected into `audit_query.sql` as `{{tenant_name}}`. |
 | `authenticationMode` | string | `OAuth` | One of `basic`, `cert_auth`, `OAuth`. |
 | `database` | string | `anaplan_audit.db` | Path to the SQLite database file. Relative paths resolve to the working directory. |
-| `lastRun` | int (Unix seconds) | `0` | Watermark for the next audit fetch. Set to `0` to backfill from the start of Anaplan's retention window (~30 days). |
+| `lastRun` | int (Unix seconds) | `0` | Watermark for the next audit fetch. Set to `0` to backfill from the start of Anaplan's retention window (~30 days). Written back to the loaded settings file after every successful upload (respects `--config`). |
 | `auditBatchSize` | int | `1000` | Page size for `GET /audit/events`. |
+| `auditRetentionYears` | int | `0` | **v3.2** — purge audit events older than this many years (0 = keep forever). A timestamped backup is taken before each purge. |
 | `auditEnabled` | bool | `true` | Gates Steps 2–6 (audit pipeline). |
+| `oauthClientId` | string | `""` | **v3.1.1** — OAuth client ID used for registration and token refresh. Required in OAuth mode; the `register` command persists it automatically. |
 | `rotatableToken` | bool | `true` | OAuth refresh-token rotation. |
 | `workspaceModelFilterApproach` | string | `select` | `select` (use the listed combos) or `skip` (use all workspaces/models except the listed combos). |
-| `workspaceModelCombos` | list | `[]` | Each item: `{workspaceId, modelId}`. |
+| `workspaceModelCombos` | list | `[]` | Each item: `{workspaceId, modelId}`. **v3.2** — values may be display names instead of IDs; names resolve against the live tenant at startup (exact match first, then case-insensitive). |
 | `certPublicPath` | string | `""` | `cert_auth` only. Path to PEM public certificate. |
 | `certPrivatePath` | string | `""` | `cert_auth` only. Path to PEM private key (may include `:passphrase` suffix). |
 | `targetAnaplanModel` | object | (required) | See Section 4.3. |

@@ -1,5 +1,7 @@
 # Anaplan Audit History v3
 
+[![CI](https://github.com/jferneau/anaplan-audit-with-history/actions/workflows/ci.yml/badge.svg)](https://github.com/jferneau/anaplan-audit-with-history/actions/workflows/ci.yml)
+
 A Python CLI that turns Anaplan's raw audit log — and, optionally, every
 model's change history — into report-ready data inside an Anaplan
 reporting model.
@@ -105,6 +107,40 @@ Both `auditEnabled` and `modelHistory.enabled` are independent — at
 least one must be `true`. This lets you run the audit pipeline hourly
 and Model History nightly without code changes.
 
+```mermaid
+flowchart LR
+    subgraph Anaplan
+        AUD[Audit API]
+        INT[Integration API]
+        SCIM[SCIM API]
+        CW[CloudWorks API]
+        ARM[(Audit Reporting Model)]
+        MHM[(Model History Model)]
+    end
+
+    subgraph anaplan-audit CLI
+        AUTH[1 Authenticate]
+        META[2 Metadata fetch]
+        FETCH[3 Audit events]
+        DB[(SQLite - WAL, dedup, schema migration)]
+        SQL[5 SQL transform]
+        MH[7 Model History export and normalize]
+    end
+
+    AUTH --> META
+    INT --> META
+    SCIM --> META
+    CW --> META
+    AUD --> FETCH
+    META --> DB
+    FETCH --> DB
+    DB --> SQL
+    SQL -->|6 upload + import, polled| ARM
+    INT --> MH
+    MH --> DB
+    DB -->|upload + process, polled| MHM
+```
+
 ---
 
 ## Step-by-Step Guide
@@ -112,14 +148,25 @@ and Model History nightly without code changes.
 ### Step 1: Install
 
 ```bash
-git clone <repo>
-cd anaplan-audit-history-v3
+git clone https://github.com/jferneau/anaplan-audit-with-history.git
+cd anaplan-audit-with-history
 uv sync
-cp settings.json.example settings.json
 ```
 
 `uv sync` installs Python 3.13, all dependencies, and registers the
 `anaplan-audit` console script in a project-local virtual environment.
+
+Then either run the interactive wizard:
+
+```bash
+uv run anaplan-audit init
+```
+
+…or copy the example and edit by hand:
+
+```bash
+cp settings.json.example settings.json
+```
 
 ### Step 2: Choose an authentication mode
 
@@ -127,7 +174,7 @@ cp settings.json.example settings.json
 |---|---|---|
 | `basic` | Quick local testing | Set `ANAPLAN_AUDIT_BASIC_USERNAME` and `ANAPLAN_AUDIT_BASIC_PASSWORD` environment variables |
 | `cert_auth` | Automated / service-account runs | Provide PEM cert paths in `settings.json` |
-| `OAuth` | **Recommended for production** | Run `anaplan-audit register --client-id <ID>` once, then unattended |
+| `OAuth` | **Recommended for production** | Run `anaplan-audit register --client-id <ID>` once — it stores the client ID in `settings.json` (`oauthClientId`) so every later run refreshes unattended |
 
 OAuth tokens are encrypted at rest with Fernet (AES-128-CBC +
 HMAC-SHA256) using a machine-local keyfile with `0600` permissions.
@@ -140,10 +187,11 @@ Minimum configuration to get a first run:
 {
   "anaplanTenantName": "your-tenant-name",
   "authenticationMode": "OAuth",
-  "database": "anaplan_audit.db",
-  "lastRun": 0,
-  "auditEnabled": true,
-  "modelHistory": { "enabled": false },
+  "oauthClientId": "",              // filled automatically by `register`
+  "workspaceModelCombos": [
+    // Names or IDs both work — names resolve against the tenant at runtime
+    { "workspaceId": "Finance", "modelId": "Revenue Model" }
+  ],
   "targetAnaplanModel": {
     "workspaceId": "...",
     "modelId":     "...",
@@ -151,9 +199,15 @@ Minimum configuration to get a first run:
       "auditFileId":    "...",
       "auditImportId":  "..."
     }
-  }
+  },
+  "modelHistory": { "enabled": false }
 }
 ```
+
+Every advanced knob (URIs, batch size, retention windows, concurrency)
+has a safe default — see
+[`settings-full.json.example`](settings-full.json.example) for the
+complete reference.
 
 Configuration precedence (highest wins):
 
@@ -221,16 +275,23 @@ When you're ready to add per-model change-history reporting:
 ## CLI commands
 
 ```
-anaplan-audit run              Full pipeline: extract → transform → upload
+anaplan-audit init              Interactive wizard — writes a minimal settings.json
+  --output PATH                 Where to write (default: ./settings.json)
+  --force                       Overwrite an existing file
+
+anaplan-audit run               Full pipeline: extract → transform → upload
   --config PATH                 Path to settings.json (default: ./settings.json)
   --verbose                     Rich console logs instead of JSON
   --dry-run                     Extract + transform only, skip upload
   --since EPOCH                 Override lastRun for this execution (Unix seconds)
+  --limit N                     Fetch at most N audit events (bounded sample runs)
 
 anaplan-audit register          One-time OAuth device registration
-  --client-id TEXT              OAuth client ID (required)
+  --client-id TEXT              OAuth client ID (optional if oauthClientId is set;
+                                persisted to settings.json on success)
 
-anaplan-audit validate-config   Lint config + test auth, no side effects
+anaplan-audit validate-config   Validate settings AND test authentication
+  --skip-auth                   Settings-only validation (offline)
 
 anaplan-audit version           Print version and dependency info
 ```
@@ -305,9 +366,10 @@ yet emitted those events.
 **How long is data retained?**
 Anaplan's audit API exposes the last ~30 days. v3 deduplicates and
 upserts on every run, so the SQLite database retains every event seen
-across all runs — typically much longer than 30 days. Model History
-defaults to `retentionYears: 2` and purges older records after a
-timestamped backup. Both windows are configurable.
+across all runs — typically much longer than 30 days. By default audit
+events are kept forever; set `auditRetentionYears` to purge older
+events (with an automatic timestamped backup first). Model History
+defaults to `retentionYears: 2`. All windows are configurable.
 
 **Can I run audit and Model History on different schedules?**
 Yes. They're independently toggleable. Two separate `settings.json`

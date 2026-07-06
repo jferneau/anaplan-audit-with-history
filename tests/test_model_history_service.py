@@ -63,6 +63,9 @@ class TestFetchModelHistory:
                 json={"task": {"taskId": TASK_ID, "taskState": "COMPLETE"}},
             )
         )
+        mock_api.get(f"{BASE}/workspaces/{WS_ID}/models/{MODEL_ID}/files/{EXPORT_ID}/chunks").mock(
+            return_value=httpx.Response(200, json={"chunks": [{"id": "0"}]})
+        )
         mock_api.get(
             f"{BASE}/workspaces/{WS_ID}/models/{MODEL_ID}/files/{EXPORT_ID}/chunks/0"
         ).mock(return_value=httpx.Response(200, text=csv_content))

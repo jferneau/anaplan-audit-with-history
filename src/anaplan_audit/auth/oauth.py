@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import structlog
 
+from anaplan_audit.auth._http import auth_post
 from anaplan_audit.auth.models import AuthToken
 from anaplan_audit.auth.token_store import TokenStore
 from anaplan_audit.config import AnaplanUris
@@ -120,27 +121,16 @@ def refresh_access_token(
             context={"client_id": client_id},
         )
 
-    try:
-        with httpx.Client(http2=True, timeout=60.0) as http:
-            resp = http.post(
-                f"{uris.oauthServiceUri}/token",
-                data={
-                    "client_id": client_id,
-                    "refresh_token": refresh_token,
-                    "grant_type": "refresh_token",
-                },
-            )
-            resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise RefreshTokenError(
-            f"Token refresh failed: HTTP {exc.response.status_code}",
-            context={"status_code": exc.response.status_code},
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise RefreshTokenError(
-            f"Token refresh request error: {exc}",
-            context={"error": str(exc)},
-        ) from exc
+    resp = auth_post(
+        f"{uris.oauthServiceUri}/token",
+        error_cls=RefreshTokenError,
+        error_label="Token refresh",
+        data={
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+    )
 
     token_data = resp.json()
     access_token = token_data["access_token"]

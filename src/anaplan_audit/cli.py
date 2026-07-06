@@ -44,6 +44,10 @@ def run(
         int | None,
         typer.Option("--since", help="Override lastRun epoch for this execution"),
     ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Fetch at most N audit events (bounded sample runs)"),
+    ] = None,
 ) -> None:
     """Run the full audit history pipeline."""
     try:
@@ -55,7 +59,7 @@ def run(
 
         from anaplan_audit.orchestrator import run as run_pipeline
 
-        exit_code = run_pipeline(settings, log, dry_run=dry_run)
+        exit_code = run_pipeline(settings, log, dry_run=dry_run, limit=limit)
         raise typer.Exit(code=exit_code)
     except AnaplanAuditError as exc:
         log = configure_logging(verbose=verbose, tenant_name="unknown")
@@ -175,6 +179,82 @@ def _test_authentication(settings: Settings) -> AuthToken:
     from anaplan_audit.orchestrator import _authenticate
 
     return _authenticate(settings)
+
+
+@app.command()
+def init(
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Where to write the settings file"),
+    ] = Path("settings.json"),
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite an existing settings file"),
+    ] = False,
+) -> None:
+    """Interactive wizard — create a minimal settings.json.
+
+    Prompts for the handful of values every deployment needs and writes a
+    ready-to-validate settings file. Workspace and model may be given by
+    display name — the pipeline resolves names to IDs at runtime.
+    """
+    import json
+
+    if output.exists() and not force:
+        console.print(f"[red]{output} already exists.[/red] Re-run with --force to overwrite.")
+        raise typer.Exit(code=2)
+
+    console.print("[bold]Anaplan Audit History — setup wizard[/bold]\n")
+
+    tenant = typer.prompt("Anaplan tenant name")
+    auth_mode = typer.prompt("Authentication mode (basic / cert_auth / OAuth)", default="OAuth")
+
+    config: dict[str, object] = {
+        "anaplanTenantName": tenant,
+        "authenticationMode": auth_mode,
+    }
+
+    if auth_mode == "OAuth":
+        client_id = typer.prompt(
+            "OAuth client ID (leave blank to set later via 'register')",
+            default="",
+            show_default=False,
+        )
+        config["oauthClientId"] = client_id
+    elif auth_mode == "cert_auth":
+        config["certPublicPath"] = typer.prompt("Path to PEM public certificate")
+        config["certPrivatePath"] = typer.prompt("Path to PEM private key")
+    elif auth_mode == "basic":
+        console.print(
+            "  [dim]Set ANAPLAN_AUDIT_BASIC_USERNAME and "
+            "ANAPLAN_AUDIT_BASIC_PASSWORD environment variables.[/dim]"
+        )
+
+    src_ws = typer.prompt("Source workspace (name or ID)")
+    src_model = typer.prompt("Source model (name or ID)")
+    config["workspaceModelCombos"] = [{"workspaceId": src_ws, "modelId": src_model}]
+
+    tgt_ws = typer.prompt("Target reporting workspace ID")
+    tgt_model = typer.prompt("Target reporting model ID")
+    file_id = typer.prompt("Audit file ID in the reporting model")
+    import_id = typer.prompt("Audit import action ID in the reporting model")
+    config["targetAnaplanModel"] = {
+        "workspaceId": tgt_ws,
+        "modelId": tgt_model,
+        "objects": {"auditFileId": file_id, "auditImportId": import_id},
+    }
+
+    enable_mh = typer.confirm("Enable the Model History pipeline?", default=False)
+    config["modelHistory"] = {"enabled": enable_mh}
+
+    output.write_text(json.dumps(config, indent=4) + "\n")
+    console.print(f"\n[green]Wrote {output}.[/green] Next steps:")
+    if auth_mode == "OAuth" and not config.get("oauthClientId"):
+        console.print("  1. uv run anaplan-audit register --client-id <ID>")
+    console.print(f"  2. uv run anaplan-audit validate-config --config {output}")
+    console.print(
+        f"  3. uv run anaplan-audit run --config {output} --dry-run --limit 500 --verbose"
+    )
 
 
 @app.command()

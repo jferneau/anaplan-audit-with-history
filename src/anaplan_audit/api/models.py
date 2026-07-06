@@ -10,24 +10,39 @@ from pydantic import BaseModel, ConfigDict
 
 
 class AuditEvent(BaseModel):
-    """A single audit event from the Anaplan Audit API."""
+    """A single audit event from the Anaplan Audit API.
+
+    The declared fields are exactly the top-level attributes that
+    ``audit_query.sql`` references (``e.<field>``), so those columns are
+    guaranteed to exist in the events table regardless of what any given
+    batch contains.  Everything else — including the nested
+    ``additionalAttributes`` dict — flows through ``extra="allow"`` and is
+    flattened into dotted column names by ``pd.json_normalize``.
+    """
 
     model_config = ConfigDict(extra="allow")
 
     id: str = ""
-    date: str = ""
-    userId: str = ""
-    userName: str = ""
+    eventDate: int = 0
+    index: int = 0
+    eventTimeZone: str = ""
+    createdDate: int = 0
+    createdTimeZone: str = ""
     eventTypeId: str = ""
-    eventType: str = ""
+    userId: str = ""
+    tenantId: str = ""
     objectId: str = ""
-    objectName: str = ""
-    objectType: str = ""
+    objectTypeId: str = ""
+    objectTenantId: str = ""
+    message: str = ""
+    success: bool = True
+    errorNumber: str | None = None
     ipAddress: str = ""
-    workspaceId: str = ""
-    workspaceName: str = ""
-    modelId: str = ""
-    modelName: str = ""
+    userAgent: str = ""
+    sessionId: str = ""
+    hostName: str = ""
+    serviceVersion: str = ""
+    checksum: str = ""
 
 
 class User(BaseModel):
