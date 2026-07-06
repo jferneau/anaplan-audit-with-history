@@ -165,9 +165,7 @@ class TestSQLiteLoader:
         assert len(rows) == 3
         assert rows[1] == ("evt-002", "ExportUpdated")  # updated, not duplicated
 
-    def test_events_schema_migrates_when_new_attribute_appears(
-        self, tmp_path: Path
-    ) -> None:
+    def test_events_schema_migrates_when_new_attribute_appears(self, tmp_path: Path) -> None:
         """A new additionalAttributes.* key in a later batch is added via ALTER TABLE.
 
         Anaplan adds new audit event types over time (UX, ADO, Workflow templates,
@@ -180,9 +178,7 @@ class TestSQLiteLoader:
         db_path = tmp_path / "test.db"
 
         # First batch — schema does NOT include the new UX column.
-        batch1 = pd.DataFrame(
-            [{"id": "evt-001", "eventTypeId": "USR-8", "message": "Login"}]
-        )
+        batch1 = pd.DataFrame([{"id": "evt-001", "eventTypeId": "USR-8", "message": "Login"}])
         load_to_sqlite(db_path, {"events": batch1})
 
         # Second batch — introduces a brand-new dotted column.

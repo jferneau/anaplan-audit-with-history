@@ -11,8 +11,10 @@ import warnings
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from anaplan_audit.exceptions import ConfigError
 
 
 class WorkspaceModelCombo(BaseModel):
@@ -29,12 +31,12 @@ class AnaplanUris(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    authServiceUri: str = "https://us1a.app.anaplan.com/token/authenticate"
-    authTokenVerify: str = "https://us1a.app.anaplan.com/token/validate"
+    authServiceUri: str = "https://auth.anaplan.com/token/authenticate"
+    authTokenVerify: str = "https://auth.anaplan.com/token/validate"
     oauthServiceUri: str = "https://us1a.app.anaplan.com/oauth"
     integrationUri: str = "https://api.anaplan.com/2/0"
     auditUri: str = "https://audit.anaplan.com/audit/api/1"
-    scimUri: str = "https://scim.anaplan.com"
+    scimUri: str = "https://api.anaplan.com/scim/1/0/v2"
     cloudWorksUri: str = "https://api.cloudworks.anaplan.com/2/0"
 
 
@@ -139,11 +141,29 @@ class Settings(BaseSettings):
     certPrivatePath: str = ""
 
     # --- OAuth ---
+    oauthClientId: str = ""
+    """The OAuth client ID used for device registration and token refresh.
+
+    Required when ``authenticationMode`` is ``OAuth``.  The ``register``
+    command persists this automatically after a successful registration, so
+    most users never set it by hand.
+    """
+
     rotatableToken: bool = True
 
     # --- Basic auth (env-only, never in settings.json) ---
     basic_username: str = ""
     basic_password: str = ""
+
+    # Path of the settings.json this instance was loaded from, so writes
+    # (e.g. the lastRun watermark) go back to the same file.  None when no
+    # file existed at load time.
+    _source_path: Path | None = PrivateAttr(default=None)
+
+    @property
+    def source_path(self) -> Path | None:
+        """The settings.json path this instance was loaded from, if any."""
+        return self._source_path
 
     @field_validator("lastRun")
     @classmethod
@@ -166,8 +186,6 @@ class Settings(BaseSettings):
     def _validate_feature_flags(self) -> Settings:
         """Ensure at least one feature is enabled."""
         if not self.auditEnabled and not self.modelHistory.enabled:
-            from anaplan_audit.exceptions import ConfigError
-
             raise ConfigError(
                 "Both auditEnabled and modelHistory.enabled are false — "
                 "nothing to do. Enable at least one feature.",
@@ -178,24 +196,23 @@ class Settings(BaseSettings):
     def _validate_auth_requirements(self) -> Settings:
         """Validate auth-mode-specific requirements at startup."""
         if self.authenticationMode == "cert_auth":
-            if self.certPublicPath:
-                pub = Path(self.certPublicPath.split(":")[0])
-                if not pub.exists():
-                    from anaplan_audit.exceptions import ConfigError
-
-                    raise ConfigError(
-                        f"Certificate public key not found: {pub}",
-                        context={"path": str(pub)},
-                    )
-            if self.certPrivatePath:
-                priv = Path(self.certPrivatePath.split(":")[0])
-                if not priv.exists():
-                    from anaplan_audit.exceptions import ConfigError
-
-                    raise ConfigError(
-                        f"Certificate private key not found: {priv}",
-                        context={"path": str(priv)},
-                    )
+            if not self.certPublicPath or not self.certPrivatePath:
+                raise ConfigError(
+                    "cert_auth mode requires both certPublicPath and "
+                    "certPrivatePath in settings.json.",
+                )
+            pub = Path(self.certPublicPath.split(":")[0])
+            if not pub.exists():
+                raise ConfigError(
+                    f"Certificate public key not found: {pub}",
+                    context={"path": str(pub)},
+                )
+            priv = Path(self.certPrivatePath.rsplit(":", 1)[0])
+            if not priv.exists():
+                raise ConfigError(
+                    f"Certificate private key not found: {priv}",
+                    context={"path": str(priv)},
+                )
         return self
 
 
@@ -210,7 +227,11 @@ def load_settings(config_path: Path | None = None) -> Settings:
     """
     path = config_path or Path("settings.json")
     init_kwargs: dict[str, Any] = {}
-    if path.exists():
+    file_exists = path.exists()
+    if file_exists:
         with open(path) as f:
             init_kwargs = json.load(f)
-    return Settings(**init_kwargs)
+    settings = Settings(**init_kwargs)
+    if file_exists:
+        settings._source_path = path
+    return settings

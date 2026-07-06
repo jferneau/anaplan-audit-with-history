@@ -5,6 +5,50 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.1.1] — 2026-07-06 — Bug-fix release
+
+Five customer-facing fixes surfaced by a full code review. All are
+backwards compatible; upgrading is `git pull && uv sync`.
+
+### Fixed
+
+- **OAuth authentication was broken** unless the OAuth client ID
+  happened to equal the target model ID. The orchestrator passed
+  `targetAnaplanModel.modelId` where the OAuth `client_id` belongs,
+  so every `run` failed with "No stored refresh token" even after a
+  successful `register`. New `oauthClientId` setting drives the flow;
+  `register` now writes it into settings.json automatically after a
+  successful registration, and `--client-id` is optional when the
+  setting is already present.
+- **`lastRun` was never persisted when `--config` was used** — the
+  watermark was hardcoded to write to `./settings.json`. It now writes
+  back to the same file the settings were loaded from.
+- **`validate-config` now actually tests authentication**, as its help
+  text always claimed. On success it prints the token expiry; on
+  failure it exits with the typed auth exit code (3). Use
+  `--skip-auth` for offline validation.
+- **Default URIs pointed at legacy hosts** — `authServiceUri` defaulted
+  to `us1a.app.anaplan.com` (now `auth.anaplan.com`) and `scimUri` to
+  `scim.anaplan.com` (now `api.anaplan.com/scim/1/0/v2`). Customers
+  who copied the full example never hit this; customers omitting the
+  `uris` block would have.
+- **`cert_auth` with empty cert paths passed validation** and died
+  mid-run. Both paths are now required at startup when the mode
+  demands them.
+
+### Changed
+
+- `settings.json.example` is now the **minimal** configuration
+  (~20 lines) — tenant, auth, source combos, target model, and the
+  Model History flag. Every advanced knob (URIs, batch size,
+  retention, concurrency) lives in the new
+  `settings-full.json.example` with its default value. The dead v1
+  key `writeSampleFilesOverride` is gone, and the example now ships
+  with `modelHistory.enabled: false` to match the documented opt-in
+  default.
+
+---
+
 ## [3.1.0] — 2026-06-05 — Audit catalog refresh
 
 **Highlights:**

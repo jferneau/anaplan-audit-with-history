@@ -1,48 +1,22 @@
 {
-    "auditEnabled": true,
-    "authenticationMode": "OAuth",
     "anaplanTenantName": "Your Tenant Name",
-    "database": "anaplan_audit.db",
-    "lastRun": 0,
-    "auditBatchSize": 1000,
-    "workspaceModelFilterApproach": "select",
+    "authenticationMode": "OAuth",
+    "oauthClientId": "",
     "workspaceModelCombos": [
         {
             "workspaceId": "8a8b8c8d8e8f",
             "modelId": "AAAABBBBCCCCDDDD"
         }
     ],
-    "writeSampleFilesOverride": false,
-    "rotatableToken": true,
-    "certPublicPath": "",
-    "certPrivatePath": "",
-    "uris": {
-        "authServiceUri": "https://us1a.app.anaplan.com/token/authenticate",
-        "authTokenVerify": "https://us1a.app.anaplan.com/token/validate",
-        "oauthServiceUri": "https://us1a.app.anaplan.com/oauth",
-        "integrationUri": "https://api.anaplan.com/2/0",
-        "auditUri": "https://audit.anaplan.com/audit/api/1",
-        "scimUri": "https://scim.anaplan.com",
-        "cloudWorksUri": "https://api.cloudworks.anaplan.com/2/0"
-    },
     "targetAnaplanModel": {
         "workspaceId": "8a8b8c8d8e8f",
         "modelId": "AAAABBBBCCCCDDDD",
         "objects": {
             "auditFileId": "113000000000",
-            "auditImportId": "112000000000",
-            "lastRunFileId": "113000000001",
-            "lastRunImportId": "112000000001"
+            "auditImportId": "112000000000"
         }
     },
     "modelHistory": {
-        "enabled": true,
-        "exportActionName": "MODEL_HISTORY_EXPORT",
-        "exportTimeoutSeconds": 600,
-        "retentionYears": 2,
-        "anaplanProcess": "Load Model History",
-        "maxConcurrentExports": 5,
-        "backupBeforePurge": true,
-        "maxBackupsToKeep": 7
+        "enabled": false
     }
 }

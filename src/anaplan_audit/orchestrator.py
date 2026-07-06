@@ -311,9 +311,15 @@ def _authenticate(settings: Settings) -> AuthToken:
         )
 
     if mode == "OAuth":
+        if not settings.oauthClientId:
+            raise ConfigError(
+                "OAuth mode requires oauthClientId in settings.json. "
+                "Run 'anaplan-audit register --client-id <ID>' once — it "
+                "stores the ID for you — or add the key manually.",
+            )
         store = TokenStore()
         return refresh_access_token(
-            settings.targetAnaplanModel.modelId,
+            settings.oauthClientId,
             settings.uris,
             store,
             rotatable=settings.rotatableToken,

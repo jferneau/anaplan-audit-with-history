@@ -133,7 +133,11 @@ def _upload_last_run_to_anaplan(
 
 
 def _update_last_run(settings: Settings, new_last_run: int) -> None:
-    """Persist the updated lastRun timestamp to settings.json.
+    """Persist the updated lastRun timestamp to the loaded settings file.
+
+    Writes to the same file the settings were loaded from (respecting
+    ``--config``), falling back to ``./settings.json`` when the settings
+    were constructed without a file (env-only runs).
 
     Logs a warning on failure rather than crashing — the audit data has
     already been uploaded successfully at this point, so a settings-write
@@ -145,7 +149,7 @@ def _update_last_run(settings: Settings, new_last_run: int) -> None:
         settings: Current application settings.
         new_last_run: The new epoch timestamp.
     """
-    config_path = Path("settings.json")
+    config_path = settings.source_path or Path("settings.json")
     try:
         if config_path.exists():
             with open(config_path) as f:
@@ -153,10 +157,11 @@ def _update_last_run(settings: Settings, new_last_run: int) -> None:
             raw["lastRun"] = new_last_run
             with open(config_path, "w") as f:
                 json.dump(raw, f, indent=4)
-            logger.debug("last_run_persisted", last_run=new_last_run)
+            logger.debug("last_run_persisted", last_run=new_last_run, path=str(config_path))
     except Exception as exc:
         logger.warning(
             "last_run_persist_failed",
             error=str(exc),
+            path=str(config_path),
             note="Next run will re-fetch from previous lastRun; duplicates handled by SQLite",
         )

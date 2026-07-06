@@ -137,9 +137,7 @@ def _upsert_events(conn: sqlite3.Connection, df: pd.DataFrame) -> None:
     # plus well-known optional additionalAttributes columns referenced by
     # audit_query.sql (so the query never fails on a tenant that hasn't yet
     # produced UX, ADO, Workflow, or Comment events).
-    _ensure_event_columns(
-        conn, pd.Index(list(df.columns) + _KNOWN_OPTIONAL_EVENT_COLUMNS)
-    )
+    _ensure_event_columns(conn, pd.Index(list(df.columns) + _KNOWN_OPTIONAL_EVENT_COLUMNS))
 
     # Ensure a unique index on id for ON CONFLICT to work.
     conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{_EVENTS_TABLE}_id ON {_EVENTS_TABLE}(id)")

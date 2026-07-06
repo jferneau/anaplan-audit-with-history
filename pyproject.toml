@@ -1,6 +1,6 @@
 [project]
 name = "anaplan-audit-history"
-version = "3.1.0"
+version = "3.1.1"
 description = "Fetch Anaplan audit history and load it into an Anaplan Reporting Model"
 requires-python = ">=3.13"
 license = "MIT"
