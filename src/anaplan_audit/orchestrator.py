@@ -346,15 +346,10 @@ def _authenticate(settings: Settings) -> AuthToken:
         )
 
     if mode == "cert_auth":
-        cert_private = settings.certPrivatePath
-        passphrase: str | None = None
-        if ":" in cert_private:
-            parts = cert_private.rsplit(":", 1)
-            cert_private = parts[0]
-            passphrase = parts[1]
+        public_path, private_path, passphrase = settings.resolved_cert_paths()
         return authenticate_cert(
-            Path(settings.certPublicPath),
-            Path(cert_private),
+            public_path,
+            private_path,
             passphrase,
             settings.uris,
         )

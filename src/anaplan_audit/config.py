@@ -17,6 +17,39 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from anaplan_audit.exceptions import ConfigError
 
 
+def split_cert_path_and_passphrase(raw: str) -> tuple[str, str | None]:
+    """Split an optional ``:passphrase`` suffix from a certificate path.
+
+    The legacy convention encodes the private-key passphrase inline as
+    ``path:passphrase``.  A naive ``split(":")`` breaks Windows drive-letter
+    paths (``C:\\certs\\key.pem`` → ``"C"``), so the drive prefix is peeled
+    off before looking for the passphrase separator.  Works on both POSIX
+    and Windows:
+
+    - ``C:\\certs\\key.pem``          → (``C:\\certs\\key.pem``, ``None``)
+    - ``C:\\certs\\key.pem:secret``   → (``C:\\certs\\key.pem``, ``"secret"``)
+    - ``/etc/anaplan/key.pem``       → (``/etc/anaplan/key.pem``, ``None``)
+    - ``/etc/anaplan/key.pem:secret`` → (``/etc/anaplan/key.pem``, ``"secret"``)
+
+    Prefer the dedicated ``certPassphrase`` setting over the inline form.
+
+    Args:
+        raw: The configured path, optionally with a ``:passphrase`` suffix.
+
+    Returns:
+        ``(path, passphrase_or_None)``.
+    """
+    drive = ""
+    rest = raw
+    # Windows drive-letter prefix: "C:\" or "C:/".
+    if len(raw) >= 3 and raw[0].isalpha() and raw[1] == ":" and raw[2] in ("\\", "/"):
+        drive, rest = raw[:2], raw[2:]
+    if ":" in rest:
+        path_part, passphrase = rest.rsplit(":", 1)
+        return drive + path_part, passphrase
+    return raw, None
+
+
 class WorkspaceModelCombo(BaseModel):
     """A workspace/model pair for filtering."""
 
@@ -146,6 +179,13 @@ class Settings(BaseSettings):
     # --- Cert auth ---
     certPublicPath: str = ""
     certPrivatePath: str = ""
+    certPassphrase: str = ""
+    """Passphrase for the private key.
+
+    Preferred over the legacy ``certPrivatePath = "path:passphrase"`` inline
+    form, which is ambiguous with Windows drive letters.  When set, the
+    private-key path is used verbatim (no ``:`` parsing).
+    """
 
     # --- OAuth ---
     oauthClientId: str = ""
@@ -171,6 +211,21 @@ class Settings(BaseSettings):
     def source_path(self) -> Path | None:
         """The settings.json path this instance was loaded from, if any."""
         return self._source_path
+
+    def resolved_cert_paths(self) -> tuple[Path, Path, str | None]:
+        """Return ``(public_path, private_path, passphrase)`` for cert auth.
+
+        The public certificate never carries a passphrase and is used
+        verbatim.  The private-key passphrase comes from ``certPassphrase``
+        when set, otherwise from an inline ``:passphrase`` suffix parsed in
+        a Windows-drive-letter-safe way.  Both the startup validator and the
+        auth dispatch go through here so the parsing can never diverge.
+        """
+        pub = Path(self.certPublicPath)
+        if self.certPassphrase:
+            return pub, Path(self.certPrivatePath), self.certPassphrase
+        priv_str, passphrase = split_cert_path_and_passphrase(self.certPrivatePath)
+        return pub, Path(priv_str), passphrase
 
     @field_validator("lastRun")
     @classmethod
@@ -208,13 +263,12 @@ class Settings(BaseSettings):
                     "cert_auth mode requires both certPublicPath and "
                     "certPrivatePath in settings.json.",
                 )
-            pub = Path(self.certPublicPath.split(":")[0])
+            pub, priv, _ = self.resolved_cert_paths()
             if not pub.exists():
                 raise ConfigError(
                     f"Certificate public key not found: {pub}",
                     context={"path": str(pub)},
                 )
-            priv = Path(self.certPrivatePath.rsplit(":", 1)[0])
             if not priv.exists():
                 raise ConfigError(
                     f"Certificate private key not found: {priv}",

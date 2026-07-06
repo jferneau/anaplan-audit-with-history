@@ -17,8 +17,22 @@ This project follows [Semantic Versioning](https://semver.org/).
   with a raw `ModuleNotFoundError: fcntl`.
 - **Windows CI job** — the full test suite, build, and wheel smoke
   test now run on `windows-latest` alongside `ubuntu-latest` on every
-  push and PR.
+  push and PR. (This job immediately earned its keep by catching the
+  cert-path bug below.)
+- **`certPassphrase` setting** — a dedicated private-key passphrase
+  field, preferred over the legacy inline `certPrivatePath =
+  "path:passphrase"` form.
 - **Operations Runbook §3.3** — Windows Task Scheduler setup.
+
+### Fixed
+
+- **Certificate paths broke on Windows.** The `path:passphrase`
+  splitting used a naive `split(":")`, so a Windows path like
+  `C:\certs\key.pem` was truncated to `C` — cert auth and
+  `validate-config` failed on Windows. Splitting is now
+  drive-letter-aware (`split_cert_path_and_passphrase`), and both the
+  startup validator and the auth dispatch share one
+  `Settings.resolved_cert_paths()` resolver so the logic can't drift.
 
 ### Changed
 

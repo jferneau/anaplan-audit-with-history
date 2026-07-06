@@ -106,7 +106,16 @@ Set `authenticationMode: "basic"` in `settings.json`.
    "certPrivatePath": "/path/to/private.pem"
    ```
 
-   If the private key is passphrase-protected, append `:<passphrase>` to `certPrivatePath`.
+   If the private key is passphrase-protected, set `certPassphrase`:
+
+   ```json
+   "certPassphrase": "your-passphrase"
+   ```
+
+   **Windows note:** always use `certPassphrase` on Windows. The legacy
+   inline form (`"certPrivatePath": "path:passphrase"`) is still
+   supported and now parses safely around drive letters
+   (`C:\certs\key.pem`), but the dedicated field is unambiguous.
 
 ## 2.4 OAuth device grant (recommended)
 

@@ -14,7 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from anaplan_audit.config import AnaplanUris, Settings, load_settings
+from anaplan_audit.config import (
+    AnaplanUris,
+    Settings,
+    load_settings,
+    split_cert_path_and_passphrase,
+)
 from anaplan_audit.exceptions import ConfigError
 
 
@@ -149,3 +154,50 @@ class TestCertAuthValidation:
             certPrivatePath=f"{priv}:s3cret",
         )
         assert settings.certPrivatePath.endswith(":s3cret")
+        _, _, passphrase = settings.resolved_cert_paths()
+        assert passphrase == "s3cret"
+
+    def test_dedicated_passphrase_field(self, tmp_path: Path) -> None:
+        """certPassphrase takes precedence; path is used verbatim."""
+        pub = tmp_path / "cert.pem"
+        priv = tmp_path / "key.pem"
+        pub.write_text("cert")
+        priv.write_text("key")
+        settings = Settings(
+            authenticationMode="cert_auth",
+            certPublicPath=str(pub),
+            certPrivatePath=str(priv),
+            certPassphrase="s3cret",
+        )
+        _, resolved_priv, passphrase = settings.resolved_cert_paths()
+        assert resolved_priv == priv
+        assert passphrase == "s3cret"
+
+
+class TestCertPathSplitting:
+    """BUG (v3.2.1) — cert path/passphrase splitting must not eat Windows drive letters."""
+
+    def test_windows_path_no_passphrase(self) -> None:
+        path, passphrase = split_cert_path_and_passphrase(r"C:\certs\key.pem")
+        assert path == r"C:\certs\key.pem"
+        assert passphrase is None
+
+    def test_windows_path_with_passphrase(self) -> None:
+        path, passphrase = split_cert_path_and_passphrase(r"C:\certs\key.pem:s3cret")
+        assert path == r"C:\certs\key.pem"
+        assert passphrase == "s3cret"
+
+    def test_windows_forward_slash_drive(self) -> None:
+        path, passphrase = split_cert_path_and_passphrase("D:/certs/key.pem")
+        assert path == "D:/certs/key.pem"
+        assert passphrase is None
+
+    def test_posix_path_no_passphrase(self) -> None:
+        path, passphrase = split_cert_path_and_passphrase("/etc/anaplan/key.pem")
+        assert path == "/etc/anaplan/key.pem"
+        assert passphrase is None
+
+    def test_posix_path_with_passphrase(self) -> None:
+        path, passphrase = split_cert_path_and_passphrase("/etc/anaplan/key.pem:s3cret")
+        assert path == "/etc/anaplan/key.pem"
+        assert passphrase == "s3cret"
