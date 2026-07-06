@@ -18,6 +18,8 @@
     "rotatableToken": true,
     "certPublicPath": "",
     "certPrivatePath": "",
+    "certPassphrase": "",
+    "auditRetentionYears": 0,
     "uris": {
         "authServiceUri": "https://auth.anaplan.com/token/authenticate",
         "authTokenVerify": "https://auth.anaplan.com/token/validate",

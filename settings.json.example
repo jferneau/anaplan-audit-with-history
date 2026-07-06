@@ -1,7 +1,14 @@
 {
-    "anaplanTenantName": "Your Tenant Name",
+    "auditEnabled": true,
     "authenticationMode": "OAuth",
+    "anaplanTenantName": "Your Tenant Name",
+    "database": "anaplan_audit.db",
+    "lastRun": 0,
+    "auditBatchSize": 1000,
     "oauthClientId": "",
+    "rotatableToken": true,
+    "certPublicPath": "",
+    "certPrivatePath": "",
     "workspaceModelCombos": [
         {
             "workspaceId": "8a8b8c8d8e8f",
