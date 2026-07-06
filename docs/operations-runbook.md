@@ -207,6 +207,21 @@ via a `cmd /c` wrapper if you need a file.
 The OS-level run lock makes overlapping invocations safe — a second
 process exits cleanly with code 7 instead of corrupting the database.
 
+**One settings file per tenant.** Each run targets a single Anaplan
+tenant. To cover multiple tenants, keep a separate settings file per
+tenant and schedule each with `--config /path/to/that-tenant.json`.
+The run lock is keyed to the database file, so give each tenant its
+own `database` path too.
+
+**Large tenants — `exportTimeoutSeconds`.** The Model History export
+timeout (default 600s / 10 min) is applied *per model*. A very large
+single model can exceed it; the export is skipped and logged as
+`model_history_export_timeout` (the audit run is unaffected). If you
+see that event, raise `modelHistory.exportTimeoutSeconds` in
+`settings.json`. For reference, a model producing ~890,000 history
+rows exported and loaded in well under 10 minutes, so the default
+suits most models.
+
 ---
 
 # 4. Monitoring and Logging

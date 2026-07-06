@@ -5,6 +5,26 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **One complete `settings.json.example`.** The two-file split
+  (minimal `settings.json.example` + `settings-full.json.example`)
+  introduced in v3.1.1 was collapsed back into a single complete
+  example — the minimal version omitted operationally-important keys
+  (`lastRun`, `auditBatchSize`, `workspaceModelFilterApproach`, the
+  `uris` block, cert paths). `settings-full.json.example` is removed;
+  `settings.json.example` is now the full reference with every key at
+  its default. README updated to point at it.
+
+### Documentation
+
+- Operations Runbook: notes on one-settings-file-per-tenant and on
+  raising `modelHistory.exportTimeoutSeconds` for very large models.
+
+---
+
 ## [3.2.1] — 2026-07-06 — Native Windows support
 
 ### Added

@@ -182,33 +182,25 @@ HMAC-SHA256) using a machine-local keyfile with `0600` permissions.
 
 ### Step 3: Configure `settings.json`
 
-Minimum configuration to get a first run:
+[`settings.json.example`](settings.json.example) is the complete
+reference — every supported key with a safe default. Copy it and fill
+in the handful that are specific to your tenant:
 
-```jsonc
-{
-  "anaplanTenantName": "your-tenant-name",
-  "authenticationMode": "OAuth",
-  "oauthClientId": "",              // filled automatically by `register`
-  "workspaceModelCombos": [
-    // Names or IDs both work — names resolve against the tenant at runtime
-    { "workspaceId": "Finance", "modelId": "Revenue Model" }
-  ],
-  "targetAnaplanModel": {
-    "workspaceId": "...",
-    "modelId":     "...",
-    "objects": {
-      "auditFileId":    "...",
-      "auditImportId":  "..."
-    }
-  },
-  "modelHistory": { "enabled": false }
-}
-```
+- `anaplanTenantName` — your tenant name
+- `authenticationMode` + credentials (`oauthClientId` is filled
+  automatically by `register`)
+- `workspaceModelCombos` — the source workspace/model(s) to audit
+  (names or IDs both work; names resolve against the tenant at runtime)
+- `targetAnaplanModel` — the reporting workspace/model and its
+  `auditFileId` / `auditImportId`
 
-Every advanced knob (URIs, batch size, retention windows, concurrency)
-has a safe default — see
-[`settings-full.json.example`](settings-full.json.example) for the
-complete reference.
+Everything else (URIs, batch size, retention windows, concurrency) has
+a safe default and only needs changing for non-US clouds or advanced
+tuning.
+
+> **One settings file targets one Anaplan tenant.** To cover multiple
+> tenants, keep a separate settings file per tenant and run each with
+> `--config /path/to/that-tenant.json`.
 
 Configuration precedence (highest wins):
 
