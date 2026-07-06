@@ -5,7 +5,12 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [3.2.2] — 2026-07-06 — Config example consolidation
+
+Documentation and configuration only — no code change. The wheel is
+functionally identical to v3.2.1; this release exists so the tagged
+snapshot reflects the finalized `settings.json.example` and rollout
+docs for wide distribution.
 
 ### Changed
 
