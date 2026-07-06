@@ -10,7 +10,7 @@ date: "June 2026"
 
 | Item | Version |
 |---|---|
-| Operating system | Linux or macOS (POSIX `fcntl.flock` required for the run lock) |
+| Operating system | Linux, macOS, or Windows (v3.2.1+). The run lock uses `fcntl.flock` on POSIX and `msvcrt.locking` on Windows. |
 | Python | 3.13+ |
 | `uv` | Latest. Install from <https://docs.astral.sh/uv/> |
 | Disk | ~200 MB for code + dependencies. SQLite growth depends on tenant size; budget 100 MB–10 GB. |
@@ -165,7 +165,29 @@ Load with `launchctl load ~/Library/LaunchAgents/com.anaplan.audit.plist`.
 30 2 * * * cd /opt/anaplan-audit && /usr/local/bin/uv run anaplan-audit run --config /opt/anaplan-audit/settings-mh.json >> /var/log/anaplan-audit-mh.log 2>&1
 ```
 
-## 3.3 Scheduling frequency recommendations
+## 3.3 Windows — Task Scheduler (v3.2.1+)
+
+1. Open **Task Scheduler** and create a new Basic Task.
+2. Set the trigger to your preferred cadence (see 3.4).
+3. For the action, set **Program/script** to the full path of `uv`
+   (typically `%USERPROFILE%\.local\bin\uv.exe`).
+4. Set **Add arguments** to:
+
+   ```
+   run anaplan-audit run
+   ```
+
+5. Set **Start in** to the project directory (where `settings.json`
+   lives).
+6. Under Settings, check "Run task as soon as possible after a
+   scheduled start is missed."
+
+The run lock works on Windows via `msvcrt.locking`, so overlapping
+scheduled starts exit cleanly with code 7 exactly as on Linux/macOS.
+Logs go to stderr; redirect with `>> C:\logs\anaplan-audit.log 2>&1`
+via a `cmd /c` wrapper if you need a file.
+
+## 3.4 Scheduling frequency recommendations
 
 | Pipeline | Recommended cadence |
 |---|---|

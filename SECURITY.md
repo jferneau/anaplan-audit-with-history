@@ -5,7 +5,7 @@
 | Credential | Where it lives | Protection |
 |---|---|---|
 | OAuth refresh token | `~/.anaplan_audit/tokens.db` | Encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256) |
-| Fernet keyfile | `~/.anaplan_audit/token.key` | `0600` permissions, machine-local, generated on first use |
+| Fernet keyfile | `~/.anaplan_audit/token.key` | `0600` permissions on POSIX, machine-local, generated on first use. On Windows, POSIX permissions don't apply — the file inherits the user profile's ACLs; keep the profile directory non-shared. |
 | Basic-auth username/password | Environment variables only (`ANAPLAN_AUDIT_BASIC_USERNAME` / `_PASSWORD`) | Never written to `settings.json` or logs |
 | Certificate private key | Path you configure (`certPrivatePath`) | Stays on disk where you put it; optional passphrase supported |
 

@@ -39,7 +39,7 @@ independent; at least one must be `true`.
 | Retries | None | `tenacity` — exponential backoff + jitter, 5 attempts, honors `Retry-After` |
 | Config | Module globals + JSON | `pydantic-settings` (CLI > env > `.env` > `settings.json` > defaults) |
 | Auth token store | JWT keyed by `client_id` | Fernet (AES-128-CBC + HMAC-SHA256) with `0600` keyfile |
-| Concurrency | Not protected | `fcntl.flock` run lock + `ThreadPoolExecutor` for per-model exports |
+| Concurrency | Not protected | OS-level run lock (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows) + `ThreadPoolExecutor` for per-model exports |
 | Logging | `logging` stdlib (plain text) | `structlog` (JSON to stderr, rich console with `--verbose`) |
 | Testing | Manual endpoint probe | `pytest` + `respx` HTTP mocks (150 cases) |
 | Audit catalog | ~140 codes | **222 codes (v3.1)** — full coverage of Anaplan's current event catalog |

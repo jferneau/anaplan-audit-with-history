@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.resources
 import os
 import sqlite3
+import sys
 import threading
 import time
 
-try:
+# Platform-specific run-lock primitive: fcntl.flock on POSIX,
+# msvcrt.locking on Windows. mypy narrows on sys.platform, so each
+# platform only type-checks its own branch.
+if sys.platform == "win32":  # pragma: no cover — exercised on Windows CI
+    import msvcrt
+else:
     import fcntl
-
-    _HAS_FCNTL = True
-except ImportError:  # pragma: no cover — Windows
-    _HAS_FCNTL = False
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
 from io import StringIO
@@ -64,9 +67,12 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 class _RunLock:
     """Exclusive process-level lock backed by a ``*.lock`` file.
 
-    Uses :func:`fcntl.flock` (POSIX-only) to prevent two processes from
-    running the pipeline against the same SQLite database simultaneously.
-    The lock is released automatically when the context manager exits.
+    Prevents two processes from running the pipeline against the same
+    SQLite database simultaneously.  On Linux/macOS the lock is
+    :func:`fcntl.flock`; on Windows it is :func:`msvcrt.locking` on the
+    first byte of the lock file.  Either way the OS releases the lock if
+    the process dies, and the lock is released explicitly when the
+    context manager exits.
 
     Args:
         db_path: Path to the SQLite database file.  The lock file is written
@@ -81,15 +87,15 @@ class _RunLock:
         self._fd: int | None = None
 
     def __enter__(self) -> _RunLock:
-        if not _HAS_FCNTL:  # pragma: no cover — Windows
-            raise ConfigError(
-                "anaplan-audit requires Linux or macOS (the run lock uses "
-                "POSIX fcntl). Run inside WSL on Windows hosts.",
-            )
         self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR)
         try:
-            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
+            if sys.platform == "win32":  # pragma: no cover — Windows CI
+                msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            # BlockingIOError (POSIX) and PermissionError (Windows) are
+            # both OSError subclasses.
             os.close(self._fd)
             self._fd = None
             raise RunLockError(
@@ -107,7 +113,12 @@ class _RunLock:
         exc_tb: object,
     ) -> None:
         if self._fd is not None:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            if sys.platform == "win32":  # pragma: no cover — Windows CI
+                # Closing the fd releases the lock even if unlock fails.
+                with contextlib.suppress(OSError):
+                    msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
             os.close(self._fd)
             self._fd = None
 

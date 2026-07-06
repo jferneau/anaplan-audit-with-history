@@ -5,6 +5,30 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.1] — 2026-07-06 — Native Windows support
+
+### Added
+
+- **Windows is now a supported platform.** The run lock uses
+  `msvcrt.locking` on Windows (`fcntl.flock` remains on Linux/macOS) —
+  the only POSIX-specific code in the tool. Overlapping scheduled runs
+  exit with code 7 on all three platforms. v3.2.0's "requires Linux or
+  macOS / use WSL" refusal is gone; earlier versions crashed on Windows
+  with a raw `ModuleNotFoundError: fcntl`.
+- **Windows CI job** — the full test suite, build, and wheel smoke
+  test now run on `windows-latest` alongside `ubuntu-latest` on every
+  push and PR.
+- **Operations Runbook §3.3** — Windows Task Scheduler setup.
+
+### Changed
+
+- `tests/test_run_lock.py` rewritten platform-neutral (holds the lock
+  with a second `_RunLock` instead of raw `fcntl` calls).
+- Docs updated across the set: system requirements, stack summary,
+  SECURITY.md note on keyfile ACLs under Windows.
+
+---
+
 ## [3.2.0] — 2026-07-06 — Reliability + usability release
 
 Everything from the full code review that wasn't in the v3.1.1

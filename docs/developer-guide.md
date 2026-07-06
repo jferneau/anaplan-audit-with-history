@@ -10,7 +10,7 @@ date: "June 2026"
 
 | Item | Version |
 |---|---|
-| Operating system | Linux or macOS |
+| Operating system | Linux, macOS, or Windows |
 | Python | 3.13 |
 | `uv` | Latest |
 | `git` | 2.40+ |
@@ -65,7 +65,7 @@ uv run pytest --cov=src/anaplan_audit --cov-report=term-missing
 | `test_cli.py` | Typer command parsing, exit codes, version |
 | `test_transform.py` | SQLite WAL setup, upsert, content-based dedup, **schema migration (v3.1)**, audit_query.sql round-trip |
 | `test_backup.py` | `backup_database()` and rotation |
-| `test_run_lock.py` | `fcntl.flock` acquisition, exit code 7 on conflict |
+| `test_run_lock.py` | Run-lock acquisition (`fcntl.flock` / `msvcrt.locking`), exit code 7 on conflict — platform-neutral, runs on the Windows CI job too |
 | `test_model_history_service.py` | Export trigger, polling, download |
 | `test_model_history_transform.py` | Normalize output schema, column mapping, dedup |
 | `test_model_history_transform_streaming.py` | `csv.reader` streaming, short-row padding |

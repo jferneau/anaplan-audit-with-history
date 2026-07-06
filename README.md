@@ -11,8 +11,9 @@ reporting model.
 ## Intended Audience
 
 **Level of Difficulty:** Intermediate
-Requires familiarity with Python, Anaplan REST APIs, and a Linux/macOS
-shell. Model setup is for an experienced Anaplan model builder.
+Requires familiarity with Python, Anaplan REST APIs, and a command-line
+shell (Linux, macOS, or Windows — Windows supported natively as of
+v3.2.1). Model setup is for an experienced Anaplan model builder.
 
 **Resources Required:**
 

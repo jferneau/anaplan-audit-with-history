@@ -8,7 +8,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,11 +25,13 @@ jobs:
         run: uv sync --all-extras
 
       - name: Lint (ruff)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           uv run ruff check src/ tests/
           uv run ruff format --check src/ tests/
 
       - name: Type check (mypy strict)
+        if: matrix.os == 'ubuntu-latest'
         run: uv run mypy src/
 
       - name: Tests (pytest)
@@ -35,7 +41,12 @@ jobs:
         run: uv build
 
       - name: Smoke test wheel
+        shell: bash
         run: |
-          uv venv /tmp/smoke
-          uv pip install --python /tmp/smoke/bin/python dist/*.whl
-          /tmp/smoke/bin/anaplan-audit version
+          uv venv smoke-venv
+          uv pip install --python smoke-venv dist/*.whl
+          if [ -x smoke-venv/bin/anaplan-audit ]; then
+            smoke-venv/bin/anaplan-audit version
+          else
+            smoke-venv/Scripts/anaplan-audit.exe version
+          fi
