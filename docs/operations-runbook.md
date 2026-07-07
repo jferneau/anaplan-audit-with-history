@@ -30,34 +30,42 @@ date: "June 2026"
    ```bash
    git clone https://github.com/jferneau/anaplan-audit-with-history.git
    cd anaplan-audit-with-history
-   uv sync
    ```
 
-3. Copy and configure settings:
+   (Or download the source zip from the latest GitHub release and unzip
+   it — no git required.)
+
+3. **Recommended — one-command setup.** From the project folder, run the
+   bootstrap script for your platform. It installs `uv`, Python 3.13,
+   and all dependencies, then offers to launch the config wizard:
 
    ```bash
-   cp settings.json.example settings.json
-   # Edit settings.json — see Section 2 for authentication and
-   # the Technical Reference for the full field list
+   bash setup.sh                                          # macOS / Linux
+   powershell -ExecutionPolicy Bypass -File setup.ps1     # Windows
    ```
 
-4. Validate configuration:
+   The script is idempotent (safe to re-run) and needs no pre-installed
+   Python or `uv`. To do it manually instead: `uv sync`, then
+   `cp settings.json.example settings.json`.
+
+4. Configure and validate:
 
    ```bash
-   uv run anaplan-audit validate-config
+   uv run anaplan-audit init             # interactive config wizard
+   uv run anaplan-audit validate-config  # confirm settings + auth
    ```
 
 5. Run the first extraction (recommended with `--dry-run`):
 
    ```bash
-   uv run anaplan-audit run --dry-run --verbose
+   uv run anaplan-audit run --dry-run --limit 500 --verbose
    ```
 
-## 1.3 Verify the v3.1 release is installed
+## 1.3 Verify the release is installed
 
 ```bash
 uv run anaplan-audit version
-# anaplan-audit-history 3.1.0
+# anaplan-audit-history 3.2.2
 ```
 
 The bundled activity-event catalog should report 222 codes:

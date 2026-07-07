@@ -5,6 +5,28 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.3] — 2026-07-06 — One-command setup
+
+Onboarding only — no change to the package or CLI behavior.
+
+### Added
+
+- **`setup.sh` (macOS/Linux) and `setup.ps1` (Windows)** — one-command
+  bootstrap for new users. Each installs `uv`, Python 3.13, and all
+  dependencies, verifies the CLI, and offers to launch the config
+  wizard. No pre-installed Python or `uv` required; idempotent and safe
+  to re-run. This removes the manual venv/dependency setup that was
+  tripping up first-time installers.
+
+### Documentation
+
+- README Step 1 and Operations Runbook §1.2 now lead with the
+  one-command setup, with the manual path kept as a fallback.
+- Fixed a stale version reference in the runbook install-verification
+  step (`3.1.0` → current).
+
+---
+
 ## [3.2.2] — 2026-07-06 — Config example consolidation
 
 Documentation and configuration only — no code change. The wheel is

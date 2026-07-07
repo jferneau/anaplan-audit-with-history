@@ -148,26 +148,37 @@ flowchart LR
 
 ### Step 1: Install
 
+**Get the code** — either `git clone` the repo, or download the source
+zip from the [latest release](https://github.com/jferneau/anaplan-audit-with-history/releases/latest)
+and unzip it (no git required).
+
+**Then run the one-command setup** from a terminal in the project
+folder. It installs `uv`, Python 3.13, and every dependency, then
+offers to launch the configuration wizard:
+
+| Platform | Command |
+|---|---|
+| **macOS / Linux** | `bash setup.sh` |
+| **Windows** (PowerShell) | `powershell -ExecutionPolicy Bypass -File setup.ps1` |
+
+That's the whole install — you don't need Python or `uv` beforehand,
+and the script is safe to re-run. When it finishes, skip to Step 3
+(or let the wizard it launches configure your tenant for you).
+
+<details>
+<summary>Prefer to do it manually?</summary>
+
 ```bash
-git clone https://github.com/jferneau/anaplan-audit-with-history.git
-cd anaplan-audit-with-history
-uv sync
-```
-
-`uv sync` installs Python 3.13, all dependencies, and registers the
-`anaplan-audit` console script in a project-local virtual environment.
-
-Then either run the interactive wizard:
-
-```bash
-uv run anaplan-audit init
-```
-
-…or copy the example and edit by hand:
-
-```bash
+uv sync                     # installs Python 3.13 + dependencies
+uv run anaplan-audit init   # interactive config wizard
+# …or copy the example and edit by hand:
 cp settings.json.example settings.json
 ```
+
+If you don't have `uv`, install it first — macOS/Linux:
+`curl -LsSf https://astral.sh/uv/install.sh | sh` · Windows:
+`irm https://astral.sh/uv/install.ps1 | iex`.
+</details>
 
 ### Step 2: Choose an authentication mode
 
