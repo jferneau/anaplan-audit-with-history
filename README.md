@@ -353,6 +353,15 @@ v1 → v3 change summary.
 
 ## Frequently Asked Questions
 
+**Do I need to install pytest (or mypy, ruff)?**
+No. Those are developer tools for running the test suite. `setup.sh` /
+`setup.ps1` (and plain `uv sync`) install only what's needed to *run*
+the tool. If a manual `pip install` of pytest failed, ignore it — you
+don't need it. Run `bash setup.sh` (macOS/Linux) or
+`powershell -ExecutionPolicy Bypass -File setup.ps1` (Windows) and
+you're set. Developers who want to run the tests use
+`uv sync --all-extras`.
+
 **Does Anaplan add new audit event codes after v3 ships?**
 Yes. The lookup catalog ships in `activity_events.csv` and is bundled
 with the wheel. When Anaplan publishes new codes, add them to the CSV

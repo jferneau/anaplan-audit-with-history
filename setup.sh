@@ -64,6 +64,10 @@ echo "=================================================="
 echo " Setup complete."
 echo "=================================================="
 echo
+echo "This installed everything needed to RUN the tool."
+echo "You do NOT need pytest, mypy, ruff, or any other developer"
+echo "tools — those are only for running the test suite."
+echo
 echo "Next steps:"
 echo "  1. Configure your tenant:   uv run anaplan-audit init"
 echo "  2. (OAuth) register once:   uv run anaplan-audit register --client-id <YOUR_CLIENT_ID>"
