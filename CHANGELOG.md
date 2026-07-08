@@ -5,6 +5,31 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.4] — 2026-07-06 — `select` scoping fix for the audit path
+
+### Fixed
+
+- **`select` mode now limits the audit path to the chosen models.**
+  The audit metadata fetch took the selected *workspaces* but then
+  listed **every** model in each and called the actions/processes
+  endpoints on all of them — not just the selected models. A model the
+  user hadn't selected (archived, inaccessible, or being copied)
+  returned **404 on the actions endpoint and crashed the whole run**.
+  Action/process metadata is now fetched **only for the selected
+  (workspace, model) pairs**, so non-selected models are never queried.
+  Model History already scoped correctly to selected models; only the
+  audit path was affected.
+- **Metadata fetch is now resilient.** A selected-but-inaccessible
+  model, or an unreachable workspace, is logged
+  (`metadata_model_actions_skipped` / `metadata_list_models_failed`)
+  and skipped instead of aborting the run.
+
+Models still appear in the name-lookup tables for the whole selected
+workspace (cheap, improves name resolution in the report) — only the
+per-model action/process calls are scoped.
+
+---
+
 ## [3.2.3] — 2026-07-06 — One-command setup
 
 Onboarding only — no change to the package or CLI behavior.

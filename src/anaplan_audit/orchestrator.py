@@ -420,30 +420,60 @@ def _fetch_metadata(
     all_processes: list[dict[str, object]] = []
     model_names: dict[str, str] = {}
 
+    # The (workspace, model) pairs actually in scope. Action/process metadata
+    # is fetched ONLY for these — so `select` genuinely limits which models
+    # the audit path touches, and a model that isn't selected (archived,
+    # inaccessible, being copied) is never queried and can't 404 the run.
+    selected_pairs = {(c.workspaceId, c.modelId) for c in combos}
+
     # Combos can repeat a workspace; list each workspace's models only once.
     unique_workspace_ids = list(dict.fromkeys(c.workspaceId for c in combos))
 
     for ws_id in unique_workspace_ids:
-        models = list_models(client, uri, ws_id)
+        try:
+            models = list_models(client, uri, ws_id)
+        except Exception as exc:
+            # A whole workspace being unreachable shouldn't halt the run.
+            logger.warning("metadata_list_models_failed", workspace_id=ws_id, error=str(exc))
+            continue
+
         for m in models:
+            # Model names/rows are cheap and improve name resolution in the
+            # report, so keep every model in the workspace's lookup tables.
             model_names[m.id] = m.name
             m_dict = m.model_dump()
             m_dict["workspaceId"] = ws_id
             all_models.append(m_dict)
 
-            actions = list_actions(client, uri, ws_id, m.id)
-            for a in actions:
-                a_dict = a.model_dump()
-                a_dict["workspaceId"] = ws_id
-                a_dict["model_id"] = m.id  # SQL: a.id || a.model_id
-                all_actions.append(a_dict)
+            # Actions/processes are the expensive, per-model, 404-prone calls.
+            # Only fetch them for models that are actually selected.
+            if (ws_id, m.id) not in selected_pairs:
+                continue
 
-            processes = list_processes(client, uri, ws_id, m.id)
-            for p in processes:
-                p_dict = p.model_dump()
-                p_dict["workspaceId"] = ws_id
-                p_dict["modelId"] = m.id
-                all_processes.append(p_dict)
+            try:
+                actions = list_actions(client, uri, ws_id, m.id)
+                for a in actions:
+                    a_dict = a.model_dump()
+                    a_dict["workspaceId"] = ws_id
+                    a_dict["model_id"] = m.id  # SQL: a.id || a.model_id
+                    all_actions.append(a_dict)
+
+                processes = list_processes(client, uri, ws_id, m.id)
+                for p in processes:
+                    p_dict = p.model_dump()
+                    p_dict["workspaceId"] = ws_id
+                    p_dict["modelId"] = m.id
+                    all_processes.append(p_dict)
+            except Exception as exc:
+                # A single selected-but-inaccessible model is logged and
+                # skipped rather than crashing the whole audit run.
+                logger.warning(
+                    "metadata_model_actions_skipped",
+                    workspace_id=ws_id,
+                    model_id=m.id,
+                    error=str(exc),
+                )
+                continue
 
     datasets = {
         "workspaces": pd.DataFrame(workspaces_data),
