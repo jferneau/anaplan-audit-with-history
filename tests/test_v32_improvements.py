@@ -259,9 +259,14 @@ class TestFetchLimit:
 
     def test_max_events_stops_pagination(self) -> None:
         audit_uri = "https://audit.test.com/audit/api/1"
-        page = {"events": [{"id": f"evt-{i}", "eventTypeId": "USR-8"} for i in range(100)]}
+        page = {
+            "response": [{"id": f"evt-{i}", "eventTypeId": "USR-8"} for i in range(100)],
+            "meta": {"paging": {}},
+        }
         with respx.mock:
-            respx.get(f"{audit_uri}/events").mock(return_value=httpx.Response(200, json=page))
+            respx.post(url__startswith=f"{audit_uri}/events/search").mock(
+                return_value=httpx.Response(200, json=page)
+            )
             with make_client() as client:
                 events = list(
                     fetch_audit_events(

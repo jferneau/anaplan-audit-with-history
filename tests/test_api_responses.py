@@ -23,19 +23,27 @@ def _make_token() -> AuthToken:
 
 
 class TestFetchAuditEvents:
-    """Tests for fetch_audit_events pagination."""
+    """Tests for fetch_audit_events against the real Anaplan Audit API contract.
+
+    The API is ``POST {uri}/events/search?limit=N`` with body ``{"from": ms}``;
+    events live under the ``response`` key; pages are followed via
+    ``meta.paging.nextUrl``.
+    """
+
+    SEARCH_URL = "https://audit.test.com/audit/api/1/events/search"
 
     def test_single_page(self) -> None:
         """Single page of results is returned without extra requests."""
         with respx.mock:
-            respx.get("https://audit.test.com/audit/api/1/events").mock(
+            respx.post(url__startswith=self.SEARCH_URL).mock(
                 return_value=httpx.Response(
                     200,
                     json={
-                        "events": [
+                        "response": [
                             {"id": "evt-001", "eventTypeId": "CONN-1"},
                             {"id": "evt-002", "eventTypeId": "CONN-2"},
-                        ]
+                        ],
+                        "meta": {"paging": {"totalSize": 2}},
                     },
                 )
             )
@@ -51,11 +59,34 @@ class TestFetchAuditEvents:
         assert len(events) == 2
         assert events[0].id == "evt-001"
 
+    def test_uses_post_search_with_from_body(self) -> None:
+        """The request is POST /events/search with a JSON `from` body (ms)."""
+        with respx.mock:
+            route = respx.post(url__startswith=self.SEARCH_URL).mock(
+                return_value=httpx.Response(200, json={"response": [], "meta": {"paging": {}}})
+            )
+            with APIClient(_make_token()) as client:
+                list(
+                    fetch_audit_events(
+                        client,
+                        "https://audit.test.com/audit/api/1",
+                        since_epoch=5,  # seconds
+                        batch_size=100,
+                    )
+                )
+        assert route.called
+        request = route.calls[0].request
+        assert request.method == "POST"
+        assert str(request.url).endswith("/events/search?limit=100")
+        assert b'"from"' in request.content
+        # 5 seconds -> 5000 ms
+        assert b"5000" in request.content
+
     def test_empty_response_returns_no_events(self) -> None:
         """Empty API response yields nothing."""
         with respx.mock:
-            respx.get("https://audit.test.com/audit/api/1/events").mock(
-                return_value=httpx.Response(200, json={"events": []})
+            respx.post(url__startswith=self.SEARCH_URL).mock(
+                return_value=httpx.Response(200, json={"response": [], "meta": {"paging": {}}})
             )
             with APIClient(_make_token()) as client:
                 events = list(
@@ -68,13 +99,19 @@ class TestFetchAuditEvents:
                 )
         assert events == []
 
-    def test_pagination(self) -> None:
-        """Paginator fetches subsequent pages until a short page."""
-        page1 = {"events": [{"id": f"evt-{i:03d}"} for i in range(2)]}
-        page2 = {"events": [{"id": "evt-002"}]}
+    def test_pagination_follows_next_url(self) -> None:
+        """Paginator follows meta.paging.nextUrl until it is absent."""
+        next_url = "https://audit.test.com/audit/api/1/events/search?offset=2&limit=2"
+        page1 = {
+            "response": [{"id": "evt-000"}, {"id": "evt-001"}],
+            "meta": {"paging": {"nextUrl": next_url}},
+        }
+        page2 = {"response": [{"id": "evt-002"}], "meta": {"paging": {}}}
 
         with respx.mock:
-            route = respx.get("https://audit.test.com/audit/api/1/events").mock(
+            # One route matches the search path for both the initial POST and
+            # the follow-up POST to nextUrl; side_effect serves them in order.
+            route = respx.post(url__startswith=self.SEARCH_URL).mock(
                 side_effect=[
                     httpx.Response(200, json=page1),
                     httpx.Response(200, json=page2),
@@ -90,7 +127,9 @@ class TestFetchAuditEvents:
                     )
                 )
         assert route.call_count == 2
+        assert str(route.calls[1].request.url) == next_url
         assert len(events) == 3
+        assert events[-1].id == "evt-002"
 
 
 class TestListUsers:

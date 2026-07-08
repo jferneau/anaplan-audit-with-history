@@ -5,6 +5,39 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.6] — 2026-07-08 — Audit event fetch corrected (was returning 0 events)
+
+### Fixed
+
+- **The audit fetch returned zero events on tenants that had activity.**
+  The v3 rewrite called the wrong Anaplan Audit API contract — it did
+  `GET /events?since=&limit=&offset=` and read the `events` key. The
+  real (and v1-proven) contract is:
+  - `POST {auditUri}/events/search?limit=N` with JSON body
+    `{"from": <epoch milliseconds>}`
+  - events under the `response` key
+  - pagination via `meta.paging.nextUrl`
+
+  Because `GET /events` returned a 200 with no `events` key, every run
+  silently fetched nothing (`audit_api_returned_zero_events`).
+  `fetch_audit_events` now uses the correct POST/search contract,
+  reads `response`, and follows `nextUrl`. The `from` filter is
+  converted from the `lastRun` seconds watermark to the milliseconds
+  the API expects (`from = 0` on first run still returns the full
+  ~30-day window).
+
+  Model History was unaffected — this was purely the audit-event
+  extraction.
+
+### Tests
+
+- Rewrote the audit-fetch tests against the real contract (POST
+  `/events/search`, `response` key, `nextUrl` pagination, `from` in ms)
+  and updated the `audit_response.json` fixture to the real envelope
+  shape.
+
+---
+
 ## [3.2.5] — 2026-07-08 — Empty metadata tables no longer crash the load
 
 ### Fixed

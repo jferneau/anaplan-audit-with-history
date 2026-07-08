@@ -1,36 +1,66 @@
 {
-    "events": [
+    "meta": {
+        "schema": "https://audit.anaplan.com/audit/api/1/events",
+        "paging": {
+            "totalSize": 2
+        }
+    },
+    "status": {
+        "code": 200,
+        "message": "Success"
+    },
+    "response": [
         {
             "id": "audit-001",
-            "date": "2024-01-15T10:30:00Z",
+            "eventTypeId": "USR-13",
             "userId": "user-001",
-            "userName": "john.doe@example.com",
-            "eventTypeId": "1",
-            "eventType": "ModelOpen",
-            "objectId": "obj-001",
-            "objectName": "Revenue Model",
-            "objectType": "Model",
+            "tenantId": "tenant-001",
+            "objectId": "model-001",
+            "message": "User access to model, success",
+            "success": true,
             "ipAddress": "192.168.1.100",
-            "workspaceId": "ws-001",
-            "workspaceName": "Finance",
-            "modelId": "model-001",
-            "modelName": "Revenue Model"
+            "userAgent": "Mozilla/5.0",
+            "sessionId": "sess-001",
+            "hostName": "us1a.app.anaplan.com",
+            "serviceVersion": "1.0",
+            "eventDate": 1705312200000,
+            "eventTimeZone": "UTC",
+            "createdDate": 1705312200000,
+            "createdTimeZone": "UTC",
+            "checksum": "abc123",
+            "objectTypeId": "1",
+            "objectTenantId": "tenant-001",
+            "additionalAttributes": {
+                "workspaceId": "ws-001",
+                "modelId": "model-001",
+                "name": "Revenue Model"
+            }
         },
         {
             "id": "audit-002",
-            "date": "2024-01-15T11:00:00Z",
+            "eventTypeId": "USR-20",
             "userId": "user-002",
-            "userName": "jane.smith@example.com",
-            "eventTypeId": "2",
-            "eventType": "ExportRun",
-            "objectId": "obj-002",
-            "objectName": "Budget Export",
-            "objectType": "Export",
+            "tenantId": "tenant-001",
+            "objectId": "model-001",
+            "message": "User executed action",
+            "success": true,
             "ipAddress": "192.168.1.101",
-            "workspaceId": "ws-001",
-            "workspaceName": "Finance",
-            "modelId": "model-001",
-            "modelName": "Revenue Model"
+            "userAgent": "Mozilla/5.0",
+            "sessionId": "sess-002",
+            "hostName": "us1a.app.anaplan.com",
+            "serviceVersion": "1.0",
+            "eventDate": 1705315800000,
+            "eventTimeZone": "UTC",
+            "createdDate": 1705315800000,
+            "createdTimeZone": "UTC",
+            "checksum": "def456",
+            "objectTypeId": "1",
+            "objectTenantId": "tenant-001",
+            "additionalAttributes": {
+                "workspaceId": "ws-001",
+                "modelId": "model-001",
+                "actionId": "act-001"
+            }
         }
     ]
 }

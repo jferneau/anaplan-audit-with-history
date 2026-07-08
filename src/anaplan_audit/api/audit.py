@@ -35,24 +35,33 @@ def fetch_audit_events(
 
     Yields:
         Individual :class:`AuditEvent` instances.
+
+    Notes:
+        The Anaplan Audit API contract (verified against the tenant):
+
+        - ``POST {audit_uri}/events/search?limit=N`` with a JSON body
+          ``{"from": <epoch milliseconds>}``.
+        - Events are returned under the ``"response"`` key.
+        - Pages are followed via ``meta.paging.nextUrl`` (POST to it with
+          the same body) until that key is absent.
+
+        ``since_epoch`` is stored in **seconds** (the ``lastRun`` setting),
+        but the API's ``from`` filter is **milliseconds**, so it is
+        converted here. ``from = 0`` (first run) returns everything within
+        Anaplan's ~30-day retention window.
     """
     total = 0
-    offset = 0
+    from_ms = since_epoch * 1000
+    body = {"from": from_ms}
 
-    while True:
-        resp = client.get(
-            f"{audit_uri}/events",
-            params={
-                "since": since_epoch,
-                "limit": batch_size,
-                "offset": offset,
-            },
-        )
+    # First page carries the limit; subsequent pages come from nextUrl,
+    # which embeds its own paging state.
+    url: str | None = f"{audit_uri}/events/search?limit={batch_size}"
+
+    while url:
+        resp = client.post(url, json=body)
         payload = resp.json()
-        events = payload.get("events", payload.get("audits", []))
-
-        if not events:
-            break
+        events = payload.get("response") or []
 
         for raw in events:
             yield AuditEvent.model_validate(raw)
@@ -65,9 +74,11 @@ def fetch_audit_events(
                 )
                 return
 
-        if len(events) < batch_size:
+        # Stop if this page was empty (guards against a misbehaving API that
+        # keeps returning a nextUrl with no data).
+        if not events:
             break
 
-        offset += len(events)
+        url = payload.get("meta", {}).get("paging", {}).get("nextUrl")
 
     logger.info("audit_events_fetched", total_count=total, since_epoch=since_epoch)
