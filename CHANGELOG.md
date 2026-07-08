@@ -5,6 +5,26 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.5] — 2026-07-08 — Empty metadata tables no longer crash the load
+
+### Fixed
+
+- **A tenant with no CloudWorks integrations (or a model with no
+  actions/processes) crashed the run** with
+  `OperationalError: near ")": syntax error` while loading the
+  `cloudworks` table. An empty result became a column-less
+  `pd.DataFrame([])`, and `to_sql` emitted invalid `CREATE TABLE t ()`.
+  Metadata frames are now built with their expected columns even for a
+  0-row result (`_metadata_frame`), so empty tables are created cleanly
+  and `audit_query.sql` can still join against them. Applies to every
+  metadata table (workspaces, users, cloudworks, models, actions,
+  processes).
+- **Defensive guard in `load_to_sqlite`**: a stray column-less frame is
+  now skipped with a `sqlite_table_skipped_no_columns` warning instead
+  of raising a cryptic SQL error.
+
+---
+
 ## [3.2.4] — 2026-07-06 — `select` scoping fix for the audit path
 
 ### Fixed

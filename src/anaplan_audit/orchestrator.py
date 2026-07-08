@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 import structlog
+from pydantic import BaseModel
 
 from anaplan_audit.api.audit import fetch_audit_events
 from anaplan_audit.api.client import APIClient
@@ -33,6 +34,14 @@ from anaplan_audit.api.integration import (
     list_models,
     list_processes,
     list_workspaces,
+)
+from anaplan_audit.api.models import (
+    Action,
+    CloudWorksIntegration,
+    Model,
+    Process,
+    User,
+    Workspace,
 )
 from anaplan_audit.api.scim import list_users
 from anaplan_audit.auth.basic import authenticate_basic
@@ -377,6 +386,39 @@ def _authenticate(settings: Settings) -> AuthToken:
 # ---------------------------------------------------------------------------
 
 
+def _metadata_frame(
+    rows: list[dict[str, object]],
+    model_cls: type[BaseModel],
+    *,
+    extra: list[str] | None = None,
+) -> pd.DataFrame:
+    """Build a metadata DataFrame that always carries its expected columns.
+
+    When *rows* is empty, ``pd.DataFrame([])`` has zero columns, which makes
+    ``to_sql`` emit invalid ``CREATE TABLE t ()`` SQL and also strips the
+    columns ``audit_query.sql`` joins on. This guarantees the Pydantic
+    model's declared fields (plus any *extra* keys the orchestrator attaches)
+    are present even for a 0-row result.
+
+    Args:
+        rows: The ``model_dump()`` dicts (possibly empty).
+        model_cls: The Pydantic model whose field names define the columns.
+        extra: Additional column names attached outside the model
+            (e.g. ``workspaceId``, ``model_id``).
+
+    Returns:
+        A DataFrame with at least the expected columns.
+    """
+    columns = list(model_cls.model_fields.keys()) + list(extra or [])
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    df = pd.DataFrame(rows)
+    for col in columns:
+        if col not in df.columns:
+            df[col] = None
+    return df
+
+
 def _fetch_metadata(
     client: APIClient,
     settings: Settings,
@@ -475,13 +517,18 @@ def _fetch_metadata(
                 )
                 continue
 
+    # Build each metadata frame with guaranteed columns, so an empty result
+    # (e.g. a tenant with no CloudWorks integrations, or a model with no
+    # actions) still produces a properly-columned 0-row table. Without this,
+    # pd.DataFrame([]) has no columns and to_sql emits "CREATE TABLE t ()" —
+    # an "near ')': syntax error" — and audit_query.sql's joins would break.
     datasets = {
-        "workspaces": pd.DataFrame(workspaces_data),
-        "users": pd.DataFrame(users_data),
-        "cloudworks": pd.DataFrame(cloudworks_data),  # SQL: cloudworks cw
-        "models": pd.DataFrame(all_models),
-        "actions": pd.DataFrame(all_actions),
-        "processes": pd.DataFrame(all_processes),
+        "workspaces": _metadata_frame(workspaces_data, Workspace),
+        "users": _metadata_frame(users_data, User),
+        "cloudworks": _metadata_frame(cloudworks_data, CloudWorksIntegration),  # SQL: cloudworks cw
+        "models": _metadata_frame(all_models, Model, extra=["workspaceId"]),
+        "actions": _metadata_frame(all_actions, Action, extra=["workspaceId", "model_id"]),
+        "processes": _metadata_frame(all_processes, Process, extra=["workspaceId", "modelId"]),
         "act_codes": activity_df,  # SQL: act_codes ac
     }
     return datasets, ws_names, model_names

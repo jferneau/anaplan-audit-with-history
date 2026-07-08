@@ -103,6 +103,18 @@ def load_to_sqlite(db_path: Path, datasets: dict[str, pd.DataFrame]) -> None:
                 if table_name == _EVENTS_TABLE:
                     _upsert_events(conn, df)
                 else:
+                    # A DataFrame with no columns makes to_sql emit invalid
+                    # "CREATE TABLE t ()" ("near ')': syntax error"). Callers
+                    # should supply columns even for empty results; guard here
+                    # so a stray column-less frame degrades to a skip with a
+                    # clear warning rather than a cryptic SQL crash.
+                    if df.shape[1] == 0:
+                        logger.warning(
+                            "sqlite_table_skipped_no_columns",
+                            table=table_name,
+                            note="empty result with no columns; table not created",
+                        )
+                        continue
                     df = _sanitize_for_sqlite(df)
                     df.to_sql(table_name, conn, if_exists="replace", index=False)
                 logger.info(
