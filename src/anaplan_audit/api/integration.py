@@ -394,9 +394,7 @@ def _run_action_task(
                 # `details` is non-empty). This preserves the strict check
                 # on ``import`` tasks, whose ``successful`` signal is
                 # reliable.
-                real_failure = (
-                    action_kind != "process" or dump_available or bool(details)
-                )
+                real_failure = action_kind != "process" or dump_available or bool(details)
                 if real_failure:
                     log.error(
                         f"{action_kind}_failed_in_anaplan",
