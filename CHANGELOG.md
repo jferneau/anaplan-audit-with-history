@@ -5,6 +5,30 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.7] — 2026-07-08 — Handle Anaplan's loose audit-event typing
+
+Follow-ups to v3.2.6, surfaced once real events started flowing.
+
+### Fixed
+
+- **Integer / null field values no longer raise a ValidationError.**
+  The Audit API returns the event ``id`` as an integer (e.g.
+  ``2529918698``) and string fields such as ``hostName`` as ``null``.
+  ``AuditEvent`` now coerces its string fields (``StrCoerce``): ints and
+  ``null`` become strings instead of aborting the fetch with
+  ``Input should be a valid string``.
+- **A batch of only login events (or any events without
+  ``additionalAttributes``) no longer breaks the SQL transform.** When
+  no event in a batch carries ``additionalAttributes``,
+  ``pd.json_normalize`` produces none of the dotted columns and
+  ``audit_query.sql`` would fail with "no such column". The events
+  table now pre-declares the core ``additionalAttributes.*`` columns
+  (workspaceId, modelId, actionId, roles, etc.) in addition to the
+  newer-category ones, so the join always resolves regardless of the
+  batch mix.
+
+---
+
 ## [3.2.6] — 2026-07-08 — Audit event fetch corrected (was returning 0 events)
 
 ### Fixed

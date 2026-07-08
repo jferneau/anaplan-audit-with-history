@@ -6,7 +6,25 @@ existing runs — but known fields are typed.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict
+
+
+def _to_str(value: object) -> str:
+    """Coerce any scalar (or None) to a string.
+
+    The Anaplan Audit API is loosely typed: fields we treat as strings can
+    come back as integers (e.g. the event ``id`` is a number like
+    ``2529918698``) or ``null``. We store everything as text in SQLite and
+    resolve/join on it downstream, so normalise to ``str`` at the edge
+    rather than let a numeric ``id`` raise a ValidationError mid-fetch.
+    """
+    return "" if value is None else str(value)
+
+
+# A string field that tolerates ints / None from the API.
+StrCoerce = Annotated[str, BeforeValidator(_to_str)]
 
 
 class AuditEvent(BaseModel):
@@ -18,31 +36,34 @@ class AuditEvent(BaseModel):
     batch contains.  Everything else — including the nested
     ``additionalAttributes`` dict — flows through ``extra="allow"`` and is
     flattened into dotted column names by ``pd.json_normalize``.
+
+    String fields use :data:`StrCoerce` because the Audit API returns some
+    of them (notably ``id``) as integers or ``null``.
     """
 
     model_config = ConfigDict(extra="allow")
 
-    id: str = ""
+    id: StrCoerce = ""
     eventDate: int = 0
     index: int = 0
-    eventTimeZone: str = ""
+    eventTimeZone: StrCoerce = ""
     createdDate: int = 0
-    createdTimeZone: str = ""
-    eventTypeId: str = ""
-    userId: str = ""
-    tenantId: str = ""
-    objectId: str = ""
-    objectTypeId: str = ""
-    objectTenantId: str = ""
-    message: str = ""
+    createdTimeZone: StrCoerce = ""
+    eventTypeId: StrCoerce = ""
+    userId: StrCoerce = ""
+    tenantId: StrCoerce = ""
+    objectId: StrCoerce = ""
+    objectTypeId: StrCoerce = ""
+    objectTenantId: StrCoerce = ""
+    message: StrCoerce = ""
     success: bool = True
-    errorNumber: str | None = None
-    ipAddress: str = ""
-    userAgent: str = ""
-    sessionId: str = ""
-    hostName: str = ""
-    serviceVersion: str = ""
-    checksum: str = ""
+    errorNumber: StrCoerce | None = None
+    ipAddress: StrCoerce = ""
+    userAgent: StrCoerce = ""
+    sessionId: StrCoerce = ""
+    hostName: StrCoerce = ""
+    serviceVersion: StrCoerce = ""
+    checksum: StrCoerce = ""
 
 
 class User(BaseModel):

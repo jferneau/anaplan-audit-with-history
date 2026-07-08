@@ -22,12 +22,29 @@ _EVENTS_TABLE = "events"
 # Backup file glob pattern, e.g. anaplan_audit_backup_20260412_143000.db
 _BACKUP_GLOB = "*_backup_*"
 
-# Optional dotted columns that audit_query.sql references for the newer
-# event categories (UX boards/worksheets/reports, ADO pipelines/dataspaces,
-# Workflow templates, Comments). They are pre-created when the events table
-# is written so the SELECT never errors on tenants that haven't yet emitted
-# events in those categories.
+# Dotted additionalAttributes columns that audit_query.sql references.
+# pd.json_normalize only creates a dotted column when at least one event in
+# the batch carries that nested key — so a batch of, say, only login events
+# (whose additionalAttributes is null) would omit them and the SELECT would
+# fail with "no such column". Pre-creating them when the events table is
+# written guarantees the join always resolves, regardless of the batch mix.
 _KNOWN_OPTIONAL_EVENT_COLUMNS: list[str] = [
+    # Core attributes (present on most user-activity / access events).
+    "additionalAttributes.workspaceId",
+    "additionalAttributes.modelId",
+    "additionalAttributes.actionId",
+    "additionalAttributes.name",
+    "additionalAttributes.type",
+    "additionalAttributes.auth_id",
+    "additionalAttributes.modelRoleName",
+    "additionalAttributes.modelRoleId",
+    "additionalAttributes.objectTypeId",
+    "additionalAttributes.roleId",
+    "additionalAttributes.roleName",
+    "additionalAttributes.objectTenantId",
+    "additionalAttributes.objectId",
+    "additionalAttributes.active",
+    # Newer event categories: UX pages, ADO, Workflow templates, Comments.
     "additionalAttributes.appId",
     "additionalAttributes.pageId",
     "additionalAttributes.pageName",
