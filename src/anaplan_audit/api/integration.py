@@ -382,21 +382,48 @@ def _run_action_task(
             result = task.get("result", {})
             successful = result.get("successful", True)
             dump_available = result.get("failureDumpAvailable", False)
+            details = result.get("details", []) or []
+
             if not successful:
-                log.error(
-                    f"{action_kind}_failed_in_anaplan",
-                    failure_dump_available=dump_available,
-                    details=result.get("details", []),
+                # For **processes**, Anaplan sets ``successful: false`` on any
+                # non-perfect run — including harmless "rows ignored" from
+                # nested imports that touched empty or partial data. Anaplan's
+                # own UI reports this as "completed with warnings", not a
+                # failure. Only treat it as a real failure when Anaplan
+                # actually points at something (a failure dump exists, or
+                # `details` is non-empty). This preserves the strict check
+                # on ``import`` tasks, whose ``successful`` signal is
+                # reliable.
+                real_failure = (
+                    action_kind != "process" or dump_available or bool(details)
                 )
-                raise UnexpectedResponseError(
-                    f"Anaplan {action_kind} {action_id} completed unsuccessfully. "
-                    "Check the failure dump in the Anaplan model.",
-                    context={
-                        "action_id": action_id,
-                        "task_id": task_id,
-                        "failure_dump_available": str(dump_available),
-                    },
+                if real_failure:
+                    log.error(
+                        f"{action_kind}_failed_in_anaplan",
+                        failure_dump_available=dump_available,
+                        details=details,
+                    )
+                    raise UnexpectedResponseError(
+                        f"Anaplan {action_kind} {action_id} completed unsuccessfully. "
+                        "Check the failure dump in the Anaplan model.",
+                        context={
+                            "action_id": action_id,
+                            "task_id": task_id,
+                            "failure_dump_available": str(dump_available),
+                        },
+                    )
+                log.warning(
+                    f"{action_kind}_completed_with_warnings",
+                    note=(
+                        "Anaplan reported successful=false with no failure "
+                        "dump and no details. Common for processes whose "
+                        "nested imports had rows ignored (e.g. empty inputs); "
+                        "the data typically landed. Review the process's "
+                        "History in Anaplan to confirm."
+                    ),
                 )
+                return task
+
             log.info(f"{action_kind}_complete", failure_dump_available=dump_available)
             return task
 

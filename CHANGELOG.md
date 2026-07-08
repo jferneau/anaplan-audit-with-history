@@ -5,6 +5,26 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.10] — 2026-07-08 — Don't fail the run when Anaplan flags a process "completed with warnings"
+
+### Fixed
+
+- **Process runs no longer fail the pipeline when Anaplan reports
+  ``successful: false`` with no failure dump and no details** — the
+  "completed with warnings" state Anaplan's own UI shows. A real run
+  landed 380 audit events successfully (visible in the reporting
+  model) but the tool raised because one of the nested imports had
+  rows ignored. The polling code now distinguishes:
+  * **Import tasks** keep the strict check — ``successful=false`` still
+    exits 4, since imports have a reliable success signal.
+  * **Process tasks** only fail hard when Anaplan actually points at
+    something: ``failureDumpAvailable=true`` OR non-empty ``details``.
+    Otherwise the process logs
+    ``process_completed_with_warnings`` and continues successfully —
+    matching what Anaplan's UI shows the operator.
+
+---
+
 ## [3.2.9] — 2026-07-08 — v1-compatible multi-file + process upload mode
 
 ### Added
