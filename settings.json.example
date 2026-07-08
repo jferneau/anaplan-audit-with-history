@@ -33,10 +33,11 @@
         "workspaceId": "8a8b8c8d8e8f",
         "modelId": "AAAABBBBCCCCDDDD",
         "objects": {
-            "auditFileId": "113000000000",
-            "auditImportId": "112000000000",
-            "lastRunFileId": "113000000001",
-            "lastRunImportId": "112000000001"
+            "_comment": "Prefer names — resolved to IDs at runtime, so a model copy/rebuild doesn't break this. The *Id fields still work as an override.",
+            "auditFileName": "Audit Data.csv",
+            "auditImportName": "Load Audit Data from Audit Data.csv",
+            "lastRunFileName": "",
+            "lastRunImportName": ""
         }
     },
     "modelHistory": {

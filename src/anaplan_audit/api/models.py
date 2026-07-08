@@ -125,6 +125,15 @@ class ImportDataSource(BaseModel):
     name: str = ""
 
 
+class ImportAction(BaseModel):
+    """An Anaplan import action from the Integration API."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str = ""
+    name: str = ""
+
+
 class CloudWorksIntegration(BaseModel):
     """A CloudWorks integration."""
 

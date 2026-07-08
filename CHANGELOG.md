@@ -5,6 +5,35 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.8] — 2026-07-08 — Resolve the audit upload target by name
+
+### Added
+
+- **The audit file and import action can now be referenced by name**
+  (`auditFileName` / `auditImportName`, and `lastRunFileName` /
+  `lastRunImportName`), resolved to IDs at runtime. This makes the
+  config resilient to model copies/rebuilds, which change the numeric
+  file and import IDs — the exact cause of the
+  ``Cannot locate import id 112000000000`` failure. Names are preferred;
+  the existing `*Id` fields still work as an explicit override/fallback.
+  This brings the audit path in line with workspace/model resolution
+  (which already accepts names) and Model History (which already
+  resolves files and its process by name).
+- New `list_imports` Integration API call and `ImportAction` model to
+  resolve import names.
+
+### Changed
+
+- A missing/typo'd **required** name (audit file or import) now raises a
+  clear `ConfigError` listing the available names, instead of letting
+  Anaplan return a cryptic "Cannot locate import id".
+- The optional **last-run** upload no longer fails the whole run: if its
+  target can't be resolved or its import errors, it's logged and skipped
+  (the audit data is already uploaded and `lastRun` is still persisted).
+- `settings.json.example` now uses `auditFileName` / `auditImportName`.
+
+---
+
 ## [3.2.7] — 2026-07-08 — Handle Anaplan's loose audit-event typing
 
 Follow-ups to v3.2.6, surfaced once real events started flowing.

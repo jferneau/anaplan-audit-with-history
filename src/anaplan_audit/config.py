@@ -74,10 +74,23 @@ class AnaplanUris(BaseModel):
 
 
 class TargetModelObjects(BaseModel):
-    """Object IDs within the target Audit Reporting Model."""
+    """File and import references within the target Audit Reporting Model.
+
+    Prefer the ``*Name`` fields: they are resolved to IDs at runtime, so a
+    model copy or rebuild (which changes the numeric IDs) does not break the
+    configuration. The ``*Id`` fields remain as an explicit override / legacy
+    fallback, used only when the corresponding name is blank.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
+    # Preferred: resolved to IDs at runtime.
+    auditFileName: str = ""
+    auditImportName: str = ""
+    lastRunFileName: str = ""
+    lastRunImportName: str = ""
+
+    # Legacy / explicit-override IDs (used when the matching name is blank).
     auditFileId: str = ""
     auditImportId: str = ""
     lastRunFileId: str = ""

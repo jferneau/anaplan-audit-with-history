@@ -12,6 +12,7 @@ from anaplan_audit.api.models import (
     Action,
     Export,
     ExportTask,
+    ImportAction,
     ImportDataSource,
     Model,
     Process,
@@ -121,6 +122,32 @@ def list_files(
     resp = client.get(f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/files")
     data = resp.json()
     return [ImportDataSource.model_validate(f) for f in data.get("files", [])]
+
+
+def list_imports(
+    client: APIClient,
+    integration_uri: str,
+    workspace_id: str,
+    model_id: str,
+) -> list[ImportAction]:
+    """List all import actions in a model.
+
+    Used to resolve an import action *name* to its ID at runtime, so a
+    settings file can reference imports by name — resilient to the IDs
+    changing when a model is copied or rebuilt.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        integration_uri: Base URI for the Integration API.
+        workspace_id: Anaplan workspace ID.
+        model_id: Anaplan model ID.
+
+    Returns:
+        A list of :class:`ImportAction` instances.
+    """
+    resp = client.get(f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/imports")
+    data = resp.json()
+    return [ImportAction.model_validate(i) for i in data.get("imports", [])]
 
 
 def upload_file_chunks(
