@@ -34,7 +34,25 @@ def run(
     ] = None,
     verbose: Annotated[
         bool,
-        typer.Option("--verbose", help="Rich console logs instead of JSON"),
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Show DEBUG-level detail from the tool (still hides HTTP wire chatter).",
+        ),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option(
+            "--debug",
+            help="Also show HTTP wire-level chatter (httpx/httpcore) for network debugging.",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Force JSON output (auto-selected when stderr is not a terminal).",
+        ),
     ] = False,
     dry_run: Annotated[
         bool,
@@ -54,7 +72,12 @@ def run(
         settings = load_settings(config)
         if since is not None:
             settings = settings.model_copy(update={"lastRun": since})
-        log = configure_logging(verbose=verbose, tenant_name=settings.anaplanTenantName)
+        log = configure_logging(
+            verbose=verbose,
+            debug=debug,
+            json_output=json_output,
+            tenant_name=settings.anaplanTenantName,
+        )
         log.info("pipeline_starting", version=anaplan_audit.__version__)
 
         from anaplan_audit.orchestrator import run as run_pipeline
@@ -62,13 +85,17 @@ def run(
         exit_code = run_pipeline(settings, log, dry_run=dry_run, limit=limit)
         raise typer.Exit(code=exit_code)
     except AnaplanAuditError as exc:
-        log = configure_logging(verbose=verbose, tenant_name="unknown")
+        log = configure_logging(
+            verbose=verbose, debug=debug, json_output=json_output, tenant_name="unknown"
+        )
         log.error(exc.__class__.__name__, message=str(exc), **exc.context)
         raise typer.Exit(code=exc.exit_code) from exc
     except typer.Exit:
         raise
     except Exception as exc:
-        log = configure_logging(verbose=verbose, tenant_name="unknown")
+        log = configure_logging(
+            verbose=verbose, debug=debug, json_output=json_output, tenant_name="unknown"
+        )
         log.exception("unexpected_error", error=str(exc))
         raise typer.Exit(code=1) from exc
 

@@ -5,6 +5,35 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.11] — 2026-07-08 — Readable default logging for interactive runs
+
+### Changed
+
+- **Default (no ``--verbose``) output is now human-friendly** — a
+  colourised, aligned ConsoleRenderer when stderr is a terminal, JSON
+  when it isn't (piped, redirected, cron). Backward compatible for
+  scheduled runs (still JSON when non-interactive); much easier to read
+  for a colleague testing at a terminal.
+- **``--verbose`` no longer floods the terminal with HTTP wire chatter.**
+  The ``httpx`` / ``httpcore`` / ``urllib3`` loggers now stay at
+  WARNING+ regardless of verbose level. Verbose now shows only the
+  tool's own DEBUG output — the operator's actual signal.
+- **New ``--debug`` flag** enables DEBUG on the HTTP libraries too, for
+  the rare cases where you need to inspect the wire (network / auth
+  failures).
+- **New ``--json`` flag** forces JSON output regardless of TTY, for
+  wrapper scripts that want JSON even when running interactively.
+- **``-v`` short form** added for ``--verbose``.
+
+### Fixed
+
+- Per-line noise reduction in pretty mode: ``run_id`` and
+  ``tenant_name`` are shown once in a startup ``run_started`` banner
+  and hidden from every subsequent line — each event is now short and
+  scannable.
+
+---
+
 ## [3.2.10] — 2026-07-08 — Don't fail the run when Anaplan flags a process "completed with warnings"
 
 ### Fixed
