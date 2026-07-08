@@ -285,7 +285,7 @@ def _run_locked(
                 else:
                     log.info("pipeline_step_start", step="upload")
                     t0 = time.monotonic()
-                    upload_audit_data(client, result_df, settings)
+                    upload_audit_data(client, result_df, settings, db_path=db_path)
                     log.info("pipeline_step_done", step="upload", duration_ms=_elapsed(t0))
 
             # Optional audit-event retention (0 = keep forever).

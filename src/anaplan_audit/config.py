@@ -76,21 +76,55 @@ class AnaplanUris(BaseModel):
 class TargetModelObjects(BaseModel):
     """File and import references within the target Audit Reporting Model.
 
-    Prefer the ``*Name`` fields: they are resolved to IDs at runtime, so a
-    model copy or rebuild (which changes the numeric IDs) does not break the
-    configuration. The ``*Id`` fields remain as an explicit override / legacy
-    fallback, used only when the corresponding name is blank.
+    Two upload architectures are supported:
+
+    * **Multi-file + process (v1-compatible).** Set ``processName`` to run
+      an Anaplan process that ingests eight per-table CSVs (audit events,
+      users, workspaces, models, actions, files, cloudworks, activity
+      codes) uploaded to their named file sources. This matches the v1
+      reporting-model design. The CSV *file* names in the target model are
+      configured via the ``*FileName`` fields; each defaults to what v1
+      used, so most customers set only ``processName``.
+    * **Single-file (v3 default).** Set ``auditFileName`` +
+      ``auditImportName``. The tool runs its local SQL transform, uploads
+      a single blended CSV, and runs one import action.
+
+    Prefer names over IDs: they are resolved to IDs at runtime, so a
+    model copy or rebuild (which changes the numeric IDs) does not break
+    the configuration. The ``*Id`` fields remain as an explicit override.
     """
 
     model_config = ConfigDict(populate_by_name=True)
 
-    # Preferred: resolved to IDs at runtime.
+    # --- Multi-file + process mode (v1-compatible) ---------------------
+    processName: str = ""
+    """Name of the Anaplan process to run after uploading the per-table
+    CSVs. When set, the tool switches to multi-file + process mode.
+
+    The v1 process was ``"Update Anaplan Audit Environment"``.
+    """
+
+    # Per-table CSV file names in the target reporting model. Defaults
+    # match what v1 shipped, so most users only need to set ``processName``.
+    auditEventsFileName: str = "AUDIT_LOG.csv"
+    usersFileName: str = "USER_LIST.csv"
+    workspacesFileName: str = "WORKSPACE_LIST.csv"
+    modelsFileName: str = "MODEL_LIST.csv"
+    actionsFileName: str = "ACTION_LIST.csv"
+    filesFileName: str = "FILE_LIST.csv"
+    cloudworksFileName: str = "CLOUDWORKS_LIST.csv"
+    activityCodesFileName: str = "ACTIVITY_CODES.csv"
+
+    # --- Single-file mode (v3 default) ----------------------------------
+    # Blended CSV produced by audit_query.sql -> one file, one import.
     auditFileName: str = ""
     auditImportName: str = ""
+
+    # --- Optional last-run display object -------------------------------
     lastRunFileName: str = ""
     lastRunImportName: str = ""
 
-    # Legacy / explicit-override IDs (used when the matching name is blank).
+    # --- Legacy / explicit-override IDs ---------------------------------
     auditFileId: str = ""
     auditImportId: str = ""
     lastRunFileId: str = ""

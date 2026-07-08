@@ -5,6 +5,43 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.9] — 2026-07-08 — v1-compatible multi-file + process upload mode
+
+### Added
+
+- **Multi-file + process upload mode**, the architecture the v1 (and
+  current OEG) Audit Reporting Model was built around. When
+  ``targetAnaplanModel.objects.processName`` is set, the tool now
+  uploads **eight per-table CSVs** (audit events plus the six metadata
+  tables it already loads into SQLite, plus activity codes) to their
+  named file sources, then runs one process to stitch them together —
+  the same shape as v1's ``"Update Anaplan Audit Environment"``.
+- The per-table CSV **file names default to what v1 shipped**
+  (``AUDIT_LOG.csv``, ``USER_LIST.csv``, ``WORKSPACE_LIST.csv``,
+  ``MODEL_LIST.csv``, ``ACTION_LIST.csv``, ``FILE_LIST.csv``,
+  ``CLOUDWORKS_LIST.csv``, ``ACTIVITY_CODES.csv``), so most customers
+  only set ``processName`` and inherit the correct file names.
+
+### Fixed
+
+- **Broken upload against v1-shaped models.** The audit upload was
+  trying to run a single ``auditImportName`` that models built to the
+  v1 shape don't have (their imports are per-table, named
+  ``Import into SYS Users`` etc., and are driven by a process). The
+  configured process name is now resolved up front (with a clear
+  ConfigError listing available processes on a typo), all CSVs upload,
+  and the process runs.
+
+### Changed
+
+- ``upload_audit_data`` now accepts ``db_path`` so multi-file mode can
+  read the metadata tables from SQLite. Single-file mode is unchanged
+  and remains the default when ``processName`` isn't set.
+- ``settings.json.example`` now leads with ``processName`` and the
+  eight per-table file names.
+
+---
+
 ## [3.2.8] — 2026-07-08 — Resolve the audit upload target by name
 
 ### Added

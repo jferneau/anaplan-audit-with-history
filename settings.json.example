@@ -33,9 +33,18 @@
         "workspaceId": "8a8b8c8d8e8f",
         "modelId": "AAAABBBBCCCCDDDD",
         "objects": {
-            "_comment": "Prefer names — resolved to IDs at runtime, so a model copy/rebuild doesn't break this. The *Id fields still work as an override.",
-            "auditFileName": "Audit Data.csv",
-            "auditImportName": "Load Audit Data from Audit Data.csv",
+            "_comment": "Two upload modes. Multi-file + process (v1-compatible, used by the OEG Audit Reporting Model): set `processName` and the tool uploads 8 per-table CSVs then runs the process. Single-file: set `auditFileName` + `auditImportName` instead. Names are resolved to IDs at runtime so model rebuilds don't break the config. `*FileName` fields default to what v1 shipped — override only if your file sources have different names.",
+            "processName": "Update Anaplan Audit Environment",
+            "auditEventsFileName": "AUDIT_LOG.csv",
+            "usersFileName": "USER_LIST.csv",
+            "workspacesFileName": "WORKSPACE_LIST.csv",
+            "modelsFileName": "MODEL_LIST.csv",
+            "actionsFileName": "ACTION_LIST.csv",
+            "filesFileName": "FILE_LIST.csv",
+            "cloudworksFileName": "CLOUDWORKS_LIST.csv",
+            "activityCodesFileName": "ACTIVITY_CODES.csv",
+            "auditFileName": "",
+            "auditImportName": "",
             "lastRunFileName": "",
             "lastRunImportName": ""
         }

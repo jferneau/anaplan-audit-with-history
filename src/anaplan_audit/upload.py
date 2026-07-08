@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,7 +13,14 @@ import pandas as pd
 import structlog
 
 from anaplan_audit.api.client import APIClient
-from anaplan_audit.api.integration import list_files, list_imports, upload_and_import
+from anaplan_audit.api.integration import (
+    list_files,
+    list_imports,
+    list_processes,
+    run_process,
+    upload_and_import,
+    upload_file_chunks,
+)
 from anaplan_audit.config import Settings
 from anaplan_audit.exceptions import ConfigError
 
@@ -64,34 +73,51 @@ def _resolve_object_id(
     return fallback_id
 
 
+# v1-compatible multi-file mode: each SQLite table drives a CSV upload to
+# the matching file source in the target model. Order matters only
+# cosmetically; the process runs its actions in its own configured order.
+_TABLE_TO_FILE_ATTR: list[tuple[str, str]] = [
+    ("workspaces", "workspacesFileName"),
+    ("users", "usersFileName"),
+    ("models", "modelsFileName"),
+    ("actions", "actionsFileName"),
+    ("cloudworks", "cloudworksFileName"),
+    ("act_codes", "activityCodesFileName"),
+]
+
+
 def upload_audit_data(
     client: APIClient,
     df: pd.DataFrame,
     settings: Settings,
+    *,
+    db_path: Path | None = None,
 ) -> None:
-    """Upload transformed audit data to the target Anaplan Reporting Model.
+    """Upload the audit run's data to the target Anaplan Reporting Model.
 
-    Steps:
-        1. Convert DataFrame to CSV.
-        2. Upload via Integration API bulk upload.
-        3. Run the target model's import action.
-        4. If ``lastRunFileId`` and ``lastRunImportId`` are configured, upload
-           the run timestamp and trigger its import so the Anaplan model can
-           display the last-sync time.
-        5. Update ``lastRun`` timestamp in ``settings.json``.
+    Two paths, selected by config:
+
+    * **Multi-file + process** (v1-compatible) when
+      ``targetAnaplanModel.objects.processName`` is set. Uploads eight
+      per-table CSVs (audit events + six metadata tables +
+      activity codes) to their named file sources, then runs the process
+      that stitches them together. Requires ``db_path`` so the metadata
+      tables can be read from SQLite.
+    * **Single-file** when ``auditFileName`` + ``auditImportName`` are
+      set. Uploads the pre-blended audit CSV and runs one import.
 
     Args:
         client: An authenticated :class:`APIClient`.
-        df: The transformed audit DataFrame.
+        df: The transformed audit DataFrame (used in single-file mode; in
+            multi-file mode it is the source of the audit CSV).
         settings: Application settings.
+        db_path: Path to the SQLite database. Required for multi-file mode
+            because the metadata CSVs are read from the loaded tables.
     """
     target = settings.targetAnaplanModel
     integration_uri = settings.uris.integrationUri
     log = logger.bind(workspace_id=target.workspaceId, model_id=target.modelId)
 
-    # Resolve file/import references by name (preferred) or fall back to IDs.
-    # Fetch the model's files and imports once and reuse for the last-run
-    # objects too.
     file_map = {
         f.name: f.id
         for f in list_files(client, integration_uri, target.workspaceId, target.modelId)
@@ -100,6 +126,39 @@ def upload_audit_data(
         i.name: i.id
         for i in list_imports(client, integration_uri, target.workspaceId, target.modelId)
     }
+
+    if target.objects.processName:
+        if db_path is None:
+            raise ConfigError(
+                "Multi-file upload mode requires the SQLite database path; "
+                "this is a wiring bug — please report it.",
+            )
+        _upload_via_process(client, df, settings, log, file_map=file_map, db_path=db_path)
+    else:
+        _upload_single_file(client, df, settings, log, file_map=file_map, import_map=import_map)
+
+    # Capture the run timestamp AFTER a successful upload path.
+    new_last_run = int(time.time())
+
+    _upload_last_run_to_anaplan(
+        client, settings, new_last_run, log, file_map=file_map, import_map=import_map
+    )
+    _update_last_run(settings, new_last_run)
+
+    log.info("upload_complete", new_last_run=new_last_run)
+
+
+def _upload_single_file(
+    client: APIClient,
+    df: pd.DataFrame,
+    settings: Settings,
+    log: structlog.stdlib.BoundLogger,
+    *,
+    file_map: dict[str, str],
+    import_map: dict[str, str],
+) -> None:
+    """Original v3 path: one blended CSV, one import action."""
+    target = settings.targetAnaplanModel
 
     audit_file_id = _resolve_object_id(
         "file",
@@ -119,17 +178,17 @@ def upload_audit_data(
     )
     if not audit_file_id or not audit_import_id:
         raise ConfigError(
-            "Audit upload target is not configured. Set auditFileName + "
-            "auditImportName (preferred) or auditFileId + auditImportId in "
-            "targetAnaplanModel.objects.",
+            "Audit upload target is not configured. Set processName (v1-style "
+            "multi-file), or set auditFileName + auditImportName (single-file), "
+            "or the *Id fields, in targetAnaplanModel.objects.",
         )
 
     csv_data = df.to_csv(index=False)
-    log.info("upload_starting", row_count=len(df))
+    log.info("upload_starting", row_count=len(df), mode="single_file")
 
     upload_and_import(
         client,
-        integration_uri,
+        settings.uris.integrationUri,
         target.workspaceId,
         target.modelId,
         audit_file_id,
@@ -137,18 +196,116 @@ def upload_audit_data(
         csv_data,
     )
 
-    # Capture the run timestamp before writing it anywhere.
-    new_last_run = int(time.time())
 
-    # Upload last-run timestamp to Anaplan if configured.
-    _upload_last_run_to_anaplan(
-        client, settings, new_last_run, log, file_map=file_map, import_map=import_map
+def _upload_via_process(
+    client: APIClient,
+    df: pd.DataFrame,
+    settings: Settings,
+    log: structlog.stdlib.BoundLogger,
+    *,
+    file_map: dict[str, str],
+    db_path: Path,
+) -> None:
+    """v1-compatible path: upload 8 per-table CSVs, then run one process.
+
+    Each SQLite metadata table is read into a CSV and pushed to its named
+    file in the model; the audit events CSV comes from the transformed
+    DataFrame ``df``. Finally the configured process is triggered — its
+    imports run whatever order the process defines, and success/failure
+    surfaces via the polled task result.
+    """
+    target = settings.targetAnaplanModel
+    integration_uri = settings.uris.integrationUri
+
+    # Resolve the process name up front so a typo fails fast, before
+    # uploading anything.
+    processes = list_processes(client, integration_uri, target.workspaceId, target.modelId)
+    process = next((p for p in processes if p.name == target.objects.processName), None)
+    if process is None:
+        available = ", ".join(sorted(p.name for p in processes)[:20]) or "(none)"
+        raise ConfigError(
+            f"Process '{target.objects.processName}' was not found in the "
+            f"target model. Available processes: {available}",
+            context={"process": target.objects.processName},
+        )
+
+    log.info(
+        "upload_starting",
+        row_count=len(df),
+        mode="multi_file_process",
+        process_name=target.objects.processName,
     )
 
-    # Persist lastRun locally.
-    _update_last_run(settings, new_last_run)
+    # --- Upload the audit events CSV (from the transformed DataFrame) ---
+    events_file_name = target.objects.auditEventsFileName
+    events_file_id = _resolve_object_id(
+        "file",
+        events_file_name,
+        "",
+        file_map,
+        required=True,
+        log=log,
+    )
+    upload_file_chunks(
+        client,
+        integration_uri,
+        target.workspaceId,
+        target.modelId,
+        events_file_id,
+        df.to_csv(index=False),
+    )
 
-    log.info("upload_complete", new_last_run=new_last_run)
+    # --- Upload each metadata CSV read from SQLite ---
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        for table_name, file_attr in _TABLE_TO_FILE_ATTR:
+            file_name = getattr(target.objects, file_attr)
+            file_id = _resolve_object_id(
+                "file",
+                file_name,
+                "",
+                file_map,
+                required=True,
+                log=log,
+            )
+            try:
+                table_df = pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
+            except Exception as exc:
+                # A missing metadata table shouldn't fail the run — just
+                # push an empty CSV (headerless) so the model's import can
+                # clear the corresponding list cleanly.
+                log.warning(
+                    "metadata_table_missing_for_upload",
+                    table=table_name,
+                    error=str(exc),
+                )
+                table_df = pd.DataFrame()
+
+            csv_text = table_df.to_csv(index=False)
+            upload_file_chunks(
+                client,
+                integration_uri,
+                target.workspaceId,
+                target.modelId,
+                file_id,
+                csv_text,
+            )
+            log.info(
+                "metadata_csv_uploaded",
+                table=table_name,
+                file_name=file_name,
+                row_count=len(table_df),
+            )
+
+    # --- Run the stitching process ---
+    log.info("audit_process_starting", process_name=process.name, process_id=process.id)
+    run_process(
+        client,
+        integration_uri,
+        target.workspaceId,
+        target.modelId,
+        process.id,
+    )
+    log.info("audit_process_complete", process_name=process.name)
 
 
 def _upload_last_run_to_anaplan(
