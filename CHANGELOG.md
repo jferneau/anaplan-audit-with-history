@@ -5,6 +5,38 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.13] — 2026-07-09 — Write refresh log via the Transactional API
+
+### Added
+
+- **Direct write to ``BATCH_ID`` list and ``Refresh Log`` module** via
+  the Anaplan Transactional API, so the refresh log populates without
+  depending on a nested import inside the target process. On every
+  successful audit upload the tool now:
+  1. Adds a new item to the ``BATCH_ID`` list with ``code`` set to the
+     run's epoch seconds.
+  2. Writes two cells in the refresh log module for that batch:
+     ``Time Stamp`` (ISO 8601 UTC) and ``Audit Records Loaded`` (the
+     count of audit rows pushed this run).
+- **New ``anaplan_audit.api.transactional`` module** with
+  ``list_lists``, ``list_modules``, ``list_module_line_items``,
+  ``add_list_items``, and ``write_module_cells`` helpers.
+- **Four new ``TargetModelObjects`` settings** — ``batchIdListName``,
+  ``refreshLogModuleName``, ``refreshLogTimeStampLineItem``,
+  ``refreshLogRecordsLoadedLineItem``. The path is opt-in: leaving the
+  list or module name blank disables it entirely.
+
+### Notes
+
+- Failures in the refresh-log path are logged as warnings and never
+  fail the run — the audit data has already landed by the time this
+  path runs.
+- The four line-item / list / module names are resolved against the
+  live target model on each run, so a model copy/rebuild that renumbers
+  IDs doesn't break the config.
+
+---
+
 ## [3.2.12] — 2026-07-09 — Surface nested process failures
 
 ### Fixed

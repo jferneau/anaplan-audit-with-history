@@ -134,6 +134,34 @@ class ImportAction(BaseModel):
     name: str = ""
 
 
+class AnaplanList(BaseModel):
+    """An Anaplan list from the Transactional API."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str = ""
+    name: str = ""
+
+
+class Module(BaseModel):
+    """An Anaplan module from the Transactional API."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str = ""
+    name: str = ""
+
+
+class LineItem(BaseModel):
+    """A line item inside an Anaplan module."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str = ""
+    name: str = ""
+    moduleId: str = ""
+
+
 class CloudWorksIntegration(BaseModel):
     """A CloudWorks integration."""
 
