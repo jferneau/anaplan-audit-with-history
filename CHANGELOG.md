@@ -5,6 +5,29 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.17] — 2026-07-09 — Surface Anaplan's rejection reason on list/cell writes
+
+### Fixed
+
+- **``add_list_items`` and ``write_module_cells`` now include Anaplan's
+  actual failure reason in the raised exception.** Before, a generic
+  ``add-list-items failed for 70 of 70 items`` message hid the *why*.
+  The exception message now leads with the first per-item ``reason``
+  (from any of ``reason`` / ``failureReason`` /
+  ``failureMessageDetails`` / ``failureType`` / nested
+  ``status.message``), so the caller's ``log.warning(error=str(exc))``
+  actually tells the operator what to fix.
+- **Full failure array logged at WARNING** in ``list_items_add_failed``
+  and ``module_cells_write_failed`` — bounded to the first 5 entries
+  plus the first item sent, for scannable logs even when hundreds of
+  items were rejected.
+- **List-item payloads now send both ``code`` and ``name``.** Some
+  Anaplan list flavors reject code-only bodies; sending ``name = code``
+  as a default is harmless on lists that use it and required on lists
+  that do.
+
+---
+
 ## [3.2.16] — 2026-07-09 — USR_CT counter column (v1 convention fix)
 
 ### Fixed

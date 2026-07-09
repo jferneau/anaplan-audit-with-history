@@ -21,6 +21,32 @@ from anaplan_audit.exceptions import UnexpectedResponseError
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 
 
+def _extract_failure_reasons(failures: list[Any]) -> list[str]:
+    """Pull human-readable reasons out of Anaplan's per-item failure dicts.
+
+    Anaplan is inconsistent about which key carries the message —
+    depending on endpoint you'll see ``reason``, ``failureReason``,
+    ``failureMessageDetails``, or a nested ``status.message``. Try each
+    in order and return whatever's set, so callers see *why* even when
+    the response shape drifts.
+    """
+    reasons: list[str] = []
+    for f in failures:
+        if not isinstance(f, dict):
+            continue
+        r = (
+            f.get("reason")
+            or f.get("failureReason")
+            or f.get("failureMessageDetails")
+            or f.get("failureType")
+            or (f.get("status", {}) if isinstance(f.get("status"), dict) else {}).get("message")
+            or ""
+        )
+        if r:
+            reasons.append(str(r))
+    return reasons
+
+
 def list_lists(
     client: APIClient,
     integration_uri: str,
@@ -143,9 +169,23 @@ def add_list_items(
 
     failures = data.get("failures", []) or []
     if failures:
+        reasons = _extract_failure_reasons(failures)
+        first_reason = reasons[0] if reasons else ""
+        # Log the raw failure dicts (bounded to first 5) at WARNING so
+        # the operator can see the shape Anaplan returned even if the
+        # exception context is dropped by the caller's error handler.
+        logger.warning(
+            "list_items_add_failed",
+            list_id=list_id,
+            item_count=len(items),
+            failure_count=len(failures),
+            failures=failures[:5],
+            first_item_sent=items[0] if items else None,
+        )
         raise UnexpectedResponseError(
-            f"Anaplan add-list-items failed for {len(failures)} of {len(items)} items.",
-            context={"list_id": list_id, "failures": failures},
+            f"Anaplan add-list-items failed for {len(failures)} of {len(items)} items"
+            + (f": {first_reason}" if first_reason else ""),
+            context={"list_id": list_id, "failures": failures[:5]},
         )
 
     logger.info(
@@ -196,9 +236,20 @@ def write_module_cells(
 
     failures = data.get("failures", []) or []
     if failures:
+        reasons = _extract_failure_reasons(failures)
+        first_reason = reasons[0] if reasons else ""
+        logger.warning(
+            "module_cells_write_failed",
+            module_id=module_id,
+            cell_count=len(cells),
+            failure_count=len(failures),
+            failures=failures[:5],
+            first_cell_sent=cells[0] if cells else None,
+        )
         raise UnexpectedResponseError(
-            f"Anaplan module-cell write failed for {len(failures)} of {len(cells)} cells.",
-            context={"module_id": module_id, "failures": failures},
+            f"Anaplan module-cell write failed for {len(failures)} of {len(cells)} cells"
+            + (f": {first_reason}" if first_reason else ""),
+            context={"module_id": module_id, "failures": failures[:5]},
         )
 
     logger.info(

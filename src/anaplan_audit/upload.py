@@ -543,7 +543,7 @@ def _write_refresh_log_transactional(
             ws_id,
             m_id,
             list_id,
-            [{"code": batch_code}],
+            [{"code": batch_code, "name": batch_code}],
         )
 
         dimensions = [{"dimensionId": list_id, "itemCode": batch_code}]
@@ -678,7 +678,7 @@ def _sync_lists_transactional(
                 ws_id,
                 m_id,
                 list_id,
-                [{"code": code} for code in new_codes],
+                [{"code": code, "name": code} for code in new_codes],
             )
             log.info(
                 "list_sync_added",
