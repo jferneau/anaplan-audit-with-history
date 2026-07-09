@@ -46,7 +46,19 @@
             "auditFileName": "",
             "auditImportName": "",
             "lastRunFileName": "",
-            "lastRunImportName": ""
+            "lastRunImportName": "",
+
+            "_refreshLogComment": "Transactional-API refresh log (v3.2.13). On every successful run the tool adds a new item to `batchIdListName` (code = epoch seconds) and writes two cells in `refreshLogModuleName`: the ISO 8601 UTC timestamp and the count of audit rows loaded. Opt-in: blank list or module name disables it entirely. Line-item names default to what the OEG reporting model uses.",
+            "batchIdListName": "BATCH_ID",
+            "refreshLogModuleName": "Refresh Log",
+            "refreshLogTimeStampLineItem": "Time Stamp",
+            "refreshLogRecordsLoadedLineItem": "Audit Records Loaded",
+
+            "_syncListsComment": "Transactional-API list sync (v3.2.14). Belt-and-suspenders for reporting models whose nested imports don't handle new codes cleanly. For each entry the tool diffs the distinct values of `codeColumn` in the transformed audit DataFrame against the list's existing codes and POSTs any net-new codes as list items. Common columns: EVENT_ID (event types) and AUDIT_ID (per-event unique IDs). Failures never crash the run.",
+            "syncLists": [
+                { "listName": "EVENT_ID", "codeColumn": "EVENT_ID" },
+                { "listName": "AUDIT_ID", "codeColumn": "AUDIT_ID" }
+            ]
         }
     },
     "modelHistory": {
