@@ -98,7 +98,7 @@ class TestPrepareMetadataCsv:
         # Each mapped table gets its counter prepended with 1-based rows.
         expected = {
             "workspaces": "WS_CT",
-            "users": "USER_CT",
+            "users": "USR_CT",
             "models": "MOD_CT",
             "actions": "ACT_CT",
             "cloudworks": "CW_CT",
@@ -110,6 +110,23 @@ class TestPrepareMetadataCsv:
             result = _prepare_metadata_csv(table, df)
             assert next(iter(result.columns)) == counter
             assert result[counter].tolist() == [1, 2, 3]
+
+    def test_users_uses_v1_short_form_counter_usr_ct(self) -> None:
+        # v3.2.16 regression: previous release named this USER_CT, which
+        # didn't match the OEG v1 reporting model's expected key column
+        # and failed the property-based ``Import into USR_CT``.
+        df = pd.DataFrame(
+            [
+                {
+                    "id": "8a81b09e51984e9f015230df09xxxxxx",
+                    "userName": "Quin.Eddy@anaplan.com",
+                    "displayName": "Quin Eddy",
+                }
+            ]
+        )
+        result = _prepare_metadata_csv("users", df)
+        assert list(result.columns) == ["USR_CT", "id", "userName", "displayName"]
+        assert result["USR_CT"].tolist() == [1]
 
     def test_activity_codes_gets_no_counter_prepended(self) -> None:
         # act_codes carries its own natural key — no counter needed.

@@ -5,6 +5,19 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.16] — 2026-07-09 — USR_CT counter column (v1 convention fix)
+
+### Fixed
+
+- **``USER_LIST.csv`` counter column is now ``USR_CT``**, matching the
+  v1 OEG reporting model's expected key column. v3.2.15 shipped it
+  as ``USER_CT``, which failed the property-based ``Import into
+  USR_CT`` for the same reason ``WS_CT`` originally failed — no key
+  column with that name in the file. The other four counters
+  (``WS_CT``, ``MOD_CT``, ``ACT_CT``, ``CW_CT``) were already correct.
+
+---
+
 ## [3.2.15] — 2026-07-09 — Emit the columns the CT imports actually want
 
 ### Fixed

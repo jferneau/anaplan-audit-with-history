@@ -98,7 +98,7 @@ _TABLE_TO_FILE_ATTR: list[tuple[str, str]] = [
 # their key column. Matches the v1 reporting model's file layout.
 _TABLE_TO_COUNTER_COLUMN: dict[str, str] = {
     "workspaces": "WS_CT",
-    "users": "USER_CT",
+    "users": "USR_CT",
     "models": "MOD_CT",
     "actions": "ACT_CT",
     "cloudworks": "CW_CT",
