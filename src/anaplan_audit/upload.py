@@ -23,6 +23,7 @@ from anaplan_audit.api.integration import (
 )
 from anaplan_audit.api.transactional import (
     add_list_items,
+    get_list_item_codes,
     list_lists,
     list_module_line_items,
     list_modules,
@@ -140,7 +141,15 @@ def upload_audit_data(
                 "Multi-file upload mode requires the SQLite database path; "
                 "this is a wiring bug — please report it.",
             )
-        _upload_via_process(client, df, settings, log, file_map=file_map, db_path=db_path)
+        _upload_via_process(
+            client,
+            df,
+            settings,
+            log,
+            file_map=file_map,
+            import_map=import_map,
+            db_path=db_path,
+        )
     else:
         _upload_single_file(client, df, settings, log, file_map=file_map, import_map=import_map)
 
@@ -151,6 +160,7 @@ def upload_audit_data(
         client, settings, new_last_run, log, file_map=file_map, import_map=import_map
     )
     _write_refresh_log_transactional(client, settings, new_last_run, row_count=len(df), log=log)
+    _sync_lists_transactional(client, settings, df, log=log)
     _update_last_run(settings, new_last_run)
 
     log.info("upload_complete", new_last_run=new_last_run)
@@ -212,6 +222,7 @@ def _upload_via_process(
     log: structlog.stdlib.BoundLogger,
     *,
     file_map: dict[str, str],
+    import_map: dict[str, str],
     db_path: Path,
 ) -> None:
     """v1-compatible path: upload 8 per-table CSVs, then run one process.
@@ -305,6 +316,11 @@ def _upload_via_process(
             )
 
     # --- Run the stitching process ---
+    # Build id -> name lookup so nested-result log entries resolve to
+    # human-readable names instead of raw 112xxx IDs.
+    action_names = {v: k for k, v in import_map.items()}
+    action_names.update({p.id: p.name for p in processes})
+
     log.info("audit_process_starting", process_name=process.name, process_id=process.id)
     run_process(
         client,
@@ -312,6 +328,7 @@ def _upload_via_process(
         target.workspaceId,
         target.modelId,
         process.id,
+        action_names=action_names,
     )
     log.info("audit_process_complete", process_name=process.name)
 
@@ -525,6 +542,123 @@ def _write_refresh_log_transactional(
     except Exception as exc:
         # Refresh log is a display convenience; never fail the run over it.
         log.warning("refresh_log_write_failed", error=str(exc))
+
+
+def _sync_lists_transactional(
+    client: APIClient,
+    settings: Settings,
+    df: pd.DataFrame,
+    *,
+    log: structlog.stdlib.BoundLogger,
+) -> None:
+    """Diff and add net-new codes into each configured target list.
+
+    Iterates through ``targetAnaplanModel.objects.syncLists``. For each
+    entry:
+
+    1. Resolves ``listName`` against the target model's lists.
+    2. Extracts the distinct non-empty codes from ``df[codeColumn]``.
+    3. Fetches the list's existing codes via the Transactional API.
+    4. POSTs any net-new codes as list items.
+
+    A run typically observes hundreds of codes; the diff step keeps the
+    payload small even when the underlying list grows large. Every step
+    is wrapped in a try/except and logs a warning on failure — a
+    list-sync problem must never fail the pipeline.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        settings: Application settings.
+        df: The transformed audit DataFrame produced by the SQL step.
+        log: Bound logger with workspace/model context.
+    """
+    target = settings.targetAnaplanModel
+    entries = target.objects.syncLists
+    if not entries:
+        return
+
+    integration_uri = settings.uris.integrationUri
+    ws_id = target.workspaceId
+    m_id = target.modelId
+
+    try:
+        lists = list_lists(client, integration_uri, ws_id, m_id)
+    except Exception as exc:
+        log.warning("list_sync_lookup_failed", error=str(exc))
+        return
+    list_by_name = {li.name: li.id for li in lists}
+
+    for entry in entries:
+        list_id = list_by_name.get(entry.listName, "")
+        if not list_id:
+            available = ", ".join(sorted(list_by_name)[:20]) or "(none)"
+            log.warning(
+                "list_sync_list_not_found",
+                list_name=entry.listName,
+                available=available,
+            )
+            continue
+
+        if entry.codeColumn not in df.columns:
+            log.warning(
+                "list_sync_code_column_missing",
+                list_name=entry.listName,
+                code_column=entry.codeColumn,
+                available_columns=", ".join(sorted(df.columns)[:20]),
+            )
+            continue
+
+        observed = {str(v) for v in df[entry.codeColumn].dropna().unique().tolist() if str(v) != ""}
+        if not observed:
+            log.info(
+                "list_sync_no_observed_codes",
+                list_name=entry.listName,
+                code_column=entry.codeColumn,
+            )
+            continue
+
+        try:
+            existing = get_list_item_codes(client, integration_uri, ws_id, m_id, list_id)
+        except Exception as exc:
+            log.warning(
+                "list_sync_fetch_failed",
+                list_name=entry.listName,
+                error=str(exc),
+            )
+            continue
+
+        new_codes = sorted(observed - existing)
+        if not new_codes:
+            log.info(
+                "list_sync_already_current",
+                list_name=entry.listName,
+                observed_count=len(observed),
+                existing_count=len(existing),
+            )
+            continue
+
+        try:
+            add_list_items(
+                client,
+                integration_uri,
+                ws_id,
+                m_id,
+                list_id,
+                [{"code": code} for code in new_codes],
+            )
+            log.info(
+                "list_sync_added",
+                list_name=entry.listName,
+                added_count=len(new_codes),
+                observed_count=len(observed),
+                existing_count=len(existing),
+            )
+        except Exception as exc:
+            log.warning(
+                "list_sync_add_failed",
+                list_name=entry.listName,
+                error=str(exc),
+            )
 
 
 def _update_last_run(settings: Settings, new_last_run: int) -> None:

@@ -61,6 +61,50 @@ def list_module_line_items(
     return [LineItem.model_validate(li) for li in data.get("items", [])]
 
 
+def get_list_item_codes(
+    client: APIClient,
+    integration_uri: str,
+    workspace_id: str,
+    model_id: str,
+    list_id: str,
+) -> set[str]:
+    """Return the set of existing item codes for a list.
+
+    Uses the ``?includeAll=true`` query parameter so a single response
+    covers every item — the endpoint accepts a paginated form too, but
+    a set-membership check doesn't need the ordering. If Anaplan starts
+    returning a ``meta.paging.nextUrl`` the caller must handle it; for
+    now we rely on ``includeAll`` and log a warning if paging appears.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        integration_uri: Base URI for the Integration API.
+        workspace_id: Anaplan workspace ID.
+        model_id: Anaplan model ID.
+        list_id: Target list ID.
+
+    Returns:
+        A ``set`` of code strings. Items without a ``code`` are skipped.
+    """
+    url = (
+        f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}"
+        f"/lists/{list_id}/items?includeAll=true"
+    )
+    resp = client.get(url)
+    data = resp.json()
+    items = data.get("listItems", data.get("items", []))
+    codes: set[str] = {str(item["code"]) for item in items if item.get("code") not in (None, "")}
+    next_url = data.get("meta", {}).get("paging", {}).get("nextUrl")
+    if next_url:
+        logger.warning(
+            "list_items_paged_response",
+            list_id=list_id,
+            note="Anaplan returned a paged response; only page 1 was consumed.",
+        )
+    logger.debug("list_item_codes_fetched", list_id=list_id, code_count=len(codes))
+    return codes
+
+
 def add_list_items(
     client: APIClient,
     integration_uri: str,

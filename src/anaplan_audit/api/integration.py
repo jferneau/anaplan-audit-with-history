@@ -329,14 +329,24 @@ _ACTION_POLL_INTERVAL: float = 5.0
 
 def _summarize_nested_results(
     nested_results: list[dict[str, Any]],
+    action_names: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Flatten a process task's ``nestedResults`` into a scannable log field.
 
-    Each entry keeps just the four things an operator needs to diagnose a
-    process that reported ``successful=false``: the nested action's name,
-    whether it succeeded, whether it produced a failure dump, and the
-    first ~2 lines of any localised error text.
+    Each entry keeps the five things an operator needs to diagnose a
+    process that reported ``successful=false``: the nested action's
+    resolved name (falling back to *action_names* then the raw ID), the
+    ID itself, whether it succeeded, whether it produced a failure dump,
+    and the first ~2 lines of any localised error text.
+
+    Args:
+        nested_results: The raw ``result.nestedResults`` array from Anaplan.
+        action_names: Optional mapping of action ID -> display name (usually
+            built by the caller from ``list_imports`` on the target model).
+            When provided, resolves entries whose ``objectName`` is missing
+            or empty.
     """
+    names = action_names or {}
     summary: list[dict[str, Any]] = []
     for n in nested_results:
         details = n.get("details", []) or []
@@ -345,9 +355,12 @@ def _summarize_nested_results(
             for d in details
             if isinstance(d, dict) and d.get("localMessageText")
         ][:2]
+        object_id = n.get("objectId", "?")
+        resolved_name = n.get("objectName") or names.get(object_id, "") or object_id
         summary.append(
             {
-                "name": n.get("objectName") or n.get("objectId", "?"),
+                "name": resolved_name,
+                "id": object_id,
                 "ok": bool(n.get("successful", True)),
                 "failure_dump_available": bool(n.get("failureDumpAvailable", False)),
                 "details": messages,
@@ -363,6 +376,7 @@ def _run_action_task(
     action_kind: str,
     action_id: str,
     timeout_seconds: int = 300,
+    action_names: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Trigger an import/process task and poll it to completion.
 
@@ -415,7 +429,7 @@ def _run_action_task(
             nested_results = result.get("nestedResults", []) or []
 
             if not successful:
-                nested_summary = _summarize_nested_results(nested_results)
+                nested_summary = _summarize_nested_results(nested_results, action_names)
                 failed_nested_with_evidence = [
                     n
                     for n in nested_summary
@@ -490,6 +504,8 @@ def run_process(
     workspace_id: str,
     model_id: str,
     process_id: str,
+    *,
+    action_names: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Execute an Anaplan process and poll it to completion.
 
@@ -499,6 +515,9 @@ def run_process(
         workspace_id: Anaplan workspace ID.
         model_id: Anaplan model ID.
         process_id: The process ID to execute.
+        action_names: Optional mapping of nested action ID -> display
+            name, used to resolve entries in the ``nested_results``
+            log field when Anaplan omits ``objectName``.
 
     Returns:
         The terminal task dict.
@@ -508,7 +527,13 @@ def run_process(
             does not complete within the timeout.
     """
     base = f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}/processes/{process_id}"
-    return _run_action_task(client, base, action_kind="process", action_id=process_id)
+    return _run_action_task(
+        client,
+        base,
+        action_kind="process",
+        action_id=process_id,
+        action_names=action_names,
+    )
 
 
 def run_import(

@@ -123,7 +123,7 @@ class TestMultiFileUpload:
         monkeypatch.setattr(
             upload_mod,
             "run_process",
-            lambda client, uri, ws, model, pid: process_calls.append(pid),
+            lambda client, uri, ws, model, pid, **kwargs: process_calls.append(pid),
         )
         monkeypatch.setattr(upload_mod, "_update_last_run", lambda *a, **k: None)
         monkeypatch.setattr(upload_mod, "_upload_last_run_to_anaplan", lambda *a, **k: None)

@@ -50,6 +50,27 @@ def split_cert_path_and_passphrase(raw: str) -> tuple[str, str | None]:
     return raw, None
 
 
+class ListSyncEntry(BaseModel):
+    """One list in the target model whose codes we keep in sync.
+
+    On each successful run the tool takes the distinct values in
+    ``codeColumn`` from the transformed audit DataFrame, diffs them
+    against the list's existing codes via the Transactional API, and
+    POSTs any net-new codes as list items. Failures are logged as
+    warnings and never crash the run.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    listName: str
+    """Name of the target list in the reporting model."""
+
+    codeColumn: str
+    """Column in the transformed audit DataFrame whose distinct values
+    are treated as list codes. Common values: ``EVENT_ID`` (event
+    types), ``AUDIT_ID`` (per-event unique IDs)."""
+
+
 class WorkspaceModelCombo(BaseModel):
     """A workspace/model pair for filtering."""
 
@@ -144,6 +165,15 @@ class TargetModelObjects(BaseModel):
     refreshLogRecordsLoadedLineItem: str = "Audit Records Loaded"
     """Line-item name in the refresh log module that receives the count
     of audit rows loaded on this run (as an integer)."""
+
+    # --- List sync via Transactional API --------------------------------
+    syncLists: list[ListSyncEntry] = []
+    """Lists whose codes should be kept current with what this run
+    observed. For each entry the tool diffs the distinct
+    ``codeColumn`` values in the transformed audit DataFrame against
+    the list's existing codes and POSTs any net-new codes as list
+    items. Belt-and-suspenders for reporting models that also load
+    these lists via nested imports."""
 
     # --- Legacy / explicit-override IDs ---------------------------------
     auditFileId: str = ""

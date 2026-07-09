@@ -5,6 +5,32 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.14] — 2026-07-09 — Resolve nested action names + sync target lists
+
+### Added
+
+- **``nested_results`` now shows action names, not just IDs.** When a
+  process reports ``successful=false`` Anaplan sometimes omits
+  ``objectName`` on the failed nested imports — leaving the operator to
+  stare at a bare ``112000000190``. The caller now builds an id → name
+  map from the target model's imports + processes and passes it to
+  ``run_process``; the summary shows ``"name": "Load Users",
+  "id": "112000000190"``. Anaplan-supplied ``objectName`` still wins
+  when present.
+- **``syncLists`` — belt-and-suspenders list sync via the Transactional
+  API.** New optional setting under ``targetAnaplanModel.objects``.
+  Each entry is a ``{"listName": "...", "codeColumn": "..."}``: on
+  every successful run the tool diffs the distinct values of that
+  column in the transformed audit DataFrame against the list's
+  existing codes and POSTs any net-new codes as list items. Common
+  entries: ``EVENT_ID → EVENT_ID`` (event types), ``AUDIT_ID →
+  AUDIT_ID`` (per-event unique IDs). Failures log a warning and never
+  fail the run.
+- **New ``get_list_item_codes`` Transactional-API helper** returns the
+  set of existing codes in a list using ``?includeAll=true``.
+
+---
+
 ## [3.2.13] — 2026-07-09 — Write refresh log via the Transactional API
 
 ### Added
