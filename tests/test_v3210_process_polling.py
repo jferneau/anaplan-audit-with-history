@@ -112,3 +112,78 @@ class TestImportStillStrict:
             )
             with make_client() as client, pytest.raises(UnexpectedResponseError):
                 run_import(client, BASE, WS, MODEL, "I1")
+
+
+class TestNestedResultsFailPropagation:
+    """v3.2.12: a nested import failure inside a process must still fail the run.
+
+    Previously the top-level ``successful=false`` with no top-level dump was
+    silently accepted; if a nested "Load Last Run" import failed but the
+    outer process didn't surface a dump, the tool reported success.
+    """
+
+    def test_nested_result_with_failure_dump_raises(self) -> None:
+        with respx.mock:
+            _mock_action(
+                "process",
+                "P1",
+                {
+                    "successful": False,
+                    "failureDumpAvailable": False,
+                    "details": [],
+                    "nestedResults": [
+                        {"objectName": "Load Users", "successful": True},
+                        {
+                            "objectName": "Load Last Run",
+                            "successful": False,
+                            "failureDumpAvailable": True,
+                            "details": [],
+                        },
+                    ],
+                },
+            )
+            with make_client() as client, pytest.raises(UnexpectedResponseError):
+                run_process(client, BASE, WS, MODEL, "P1")
+
+    def test_nested_result_with_details_raises(self) -> None:
+        with respx.mock:
+            _mock_action(
+                "process",
+                "P1",
+                {
+                    "successful": False,
+                    "failureDumpAvailable": False,
+                    "details": [],
+                    "nestedResults": [
+                        {
+                            "objectName": "Load Audit Events",
+                            "successful": False,
+                            "failureDumpAvailable": False,
+                            "details": [{"localMessageText": "Mapping error on User"}],
+                        },
+                    ],
+                },
+            )
+            with make_client() as client, pytest.raises(UnexpectedResponseError):
+                run_process(client, BASE, WS, MODEL, "P1")
+
+    def test_nested_all_success_or_soft_warn_does_not_raise(self) -> None:
+        # Real "rows ignored" case: nested actions successful, outer wrapper
+        # still flips successful=false with no evidence anywhere. Stays a warn.
+        with respx.mock:
+            _mock_action(
+                "process",
+                "P1",
+                {
+                    "successful": False,
+                    "failureDumpAvailable": False,
+                    "details": [],
+                    "nestedResults": [
+                        {"objectName": "Load Users", "successful": True},
+                        {"objectName": "Load Models", "successful": True},
+                    ],
+                },
+            )
+            with make_client() as client:
+                task = run_process(client, BASE, WS, MODEL, "P1")
+        assert task["taskState"] == "COMPLETE"

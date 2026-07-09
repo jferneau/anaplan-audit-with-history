@@ -327,6 +327,35 @@ def download_export_file(
 _ACTION_POLL_INTERVAL: float = 5.0
 
 
+def _summarize_nested_results(
+    nested_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Flatten a process task's ``nestedResults`` into a scannable log field.
+
+    Each entry keeps just the four things an operator needs to diagnose a
+    process that reported ``successful=false``: the nested action's name,
+    whether it succeeded, whether it produced a failure dump, and the
+    first ~2 lines of any localised error text.
+    """
+    summary: list[dict[str, Any]] = []
+    for n in nested_results:
+        details = n.get("details", []) or []
+        messages = [
+            d.get("localMessageText", "")
+            for d in details
+            if isinstance(d, dict) and d.get("localMessageText")
+        ][:2]
+        summary.append(
+            {
+                "name": n.get("objectName") or n.get("objectId", "?"),
+                "ok": bool(n.get("successful", True)),
+                "failure_dump_available": bool(n.get("failureDumpAvailable", False)),
+                "details": messages,
+            }
+        )
+    return summary
+
+
 def _run_action_task(
     client: APIClient,
     base_url: str,
@@ -383,23 +412,35 @@ def _run_action_task(
             successful = result.get("successful", True)
             dump_available = result.get("failureDumpAvailable", False)
             details = result.get("details", []) or []
+            nested_results = result.get("nestedResults", []) or []
 
             if not successful:
+                nested_summary = _summarize_nested_results(nested_results)
+                failed_nested_with_evidence = [
+                    n
+                    for n in nested_summary
+                    if not n["ok"] and (n["failure_dump_available"] or n["details"])
+                ]
+
                 # For **processes**, Anaplan sets ``successful: false`` on any
                 # non-perfect run — including harmless "rows ignored" from
-                # nested imports that touched empty or partial data. Anaplan's
-                # own UI reports this as "completed with warnings", not a
-                # failure. Only treat it as a real failure when Anaplan
-                # actually points at something (a failure dump exists, or
-                # `details` is non-empty). This preserves the strict check
-                # on ``import`` tasks, whose ``successful`` signal is
-                # reliable.
-                real_failure = action_kind != "process" or dump_available or bool(details)
+                # nested imports that touched empty or partial data. Treat it
+                # as a real failure whenever Anaplan actually points at
+                # something: a top-level dump/details, OR any nested action
+                # that reported its own dump/details. Import tasks (whose
+                # ``successful`` signal is reliable) always fail hard.
+                real_failure = (
+                    action_kind != "process"
+                    or dump_available
+                    or bool(details)
+                    or bool(failed_nested_with_evidence)
+                )
                 if real_failure:
                     log.error(
                         f"{action_kind}_failed_in_anaplan",
                         failure_dump_available=dump_available,
                         details=details,
+                        nested_results=nested_summary,
                     )
                     raise UnexpectedResponseError(
                         f"Anaplan {action_kind} {action_id} completed unsuccessfully. "
@@ -408,16 +449,20 @@ def _run_action_task(
                             "action_id": action_id,
                             "task_id": task_id,
                             "failure_dump_available": str(dump_available),
+                            "failed_nested": ", ".join(
+                                n["name"] for n in failed_nested_with_evidence
+                            ),
                         },
                     )
                 log.warning(
                     f"{action_kind}_completed_with_warnings",
+                    nested_results=nested_summary,
                     note=(
                         "Anaplan reported successful=false with no failure "
                         "dump and no details. Common for processes whose "
                         "nested imports had rows ignored (e.g. empty inputs); "
-                        "the data typically landed. Review the process's "
-                        "History in Anaplan to confirm."
+                        "the data typically landed. Review the nested_results "
+                        "above and the process's History in Anaplan to confirm."
                     ),
                 )
                 return task

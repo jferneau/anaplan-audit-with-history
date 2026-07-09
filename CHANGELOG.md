@@ -5,6 +5,30 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.12] — 2026-07-09 — Surface nested process failures
+
+### Fixed
+
+- **Process ``successful=false`` now inspects nested results.** The
+  v3.2.10 relaxation (treat top-level ``successful=false`` with no dump
+  and no details as a warning) masked real failures when the process
+  wrapper reported no evidence but a nested import inside it did. A
+  colleague hit this: the audit process's inner "Load Last Run" import
+  failed, the wrapper reported ``successful=false`` with no dump, the
+  tool said "completed with warnings", and the reporting model's last-run
+  module never populated.
+- **New failure classifier** — a process now fails hard whenever any
+  nested action reports its own ``failureDumpAvailable=true`` or has
+  non-empty ``details``. Only when the wrapper *and* every failed nested
+  action are both evidence-free do we still emit the soft warning
+  (genuine "rows ignored" case).
+- **Every process warning/error now logs a ``nested_results`` summary**
+  — name, ok/failed, dump-available, and first ~2 lines of localised
+  error text per nested action. No more guessing which action inside
+  the process misbehaved.
+
+---
+
 ## [3.2.11] — 2026-07-08 — Readable default logging for interactive runs
 
 ### Changed
