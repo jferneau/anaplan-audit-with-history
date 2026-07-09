@@ -78,13 +78,20 @@ class User(BaseModel):
 
 
 class Workspace(BaseModel):
-    """An Anaplan workspace from the Integration API."""
+    """An Anaplan workspace from the Integration API.
+
+    ``sizeAllowance`` and ``currentSize`` are populated only when the
+    caller passes ``?tenantDetails=true`` (see :func:`list_workspaces`);
+    otherwise they default to ``0``.
+    """
 
     model_config = ConfigDict(extra="allow")
 
     id: str = ""
     name: str = ""
     active: bool = True
+    sizeAllowance: int = 0
+    currentSize: int = 0
 
 
 class Model(BaseModel):

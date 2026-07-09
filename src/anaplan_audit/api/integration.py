@@ -26,6 +26,13 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 def list_workspaces(client: APIClient, integration_uri: str) -> list[Workspace]:
     """List all workspaces visible to the authenticated user.
 
+    ``?tenantDetails=true`` is always sent so the response includes the
+    ``sizeAllowance`` and ``currentSize`` fields that the reporting model
+    needs alongside id/name/active. The extra bytes are trivial (one row
+    per workspace) and the flag is idempotent for tenants that don't
+    grant tenant-details visibility — those fields simply come back as
+    ``0``.
+
     Args:
         client: An authenticated :class:`APIClient`.
         integration_uri: Base URI for the Integration API.
@@ -33,7 +40,7 @@ def list_workspaces(client: APIClient, integration_uri: str) -> list[Workspace]:
     Returns:
         A list of :class:`Workspace` instances.
     """
-    resp = client.get(f"{integration_uri}/workspaces")
+    resp = client.get(f"{integration_uri}/workspaces", params={"tenantDetails": "true"})
     data = resp.json()
     return [Workspace.model_validate(w) for w in data.get("workspaces", [])]
 

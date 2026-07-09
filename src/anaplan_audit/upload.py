@@ -93,6 +93,39 @@ _TABLE_TO_FILE_ATTR: list[tuple[str, str]] = [
     ("act_codes", "activityCodesFileName"),
 ]
 
+# 1-based row counter prepended to each metadata CSV; the reporting
+# model's property-based CT imports (WS_CT, MOD_CT, ...) expect this as
+# their key column. Matches the v1 reporting model's file layout.
+_TABLE_TO_COUNTER_COLUMN: dict[str, str] = {
+    "workspaces": "WS_CT",
+    "users": "USER_CT",
+    "models": "MOD_CT",
+    "actions": "ACT_CT",
+    "cloudworks": "CW_CT",
+}
+
+
+def _prepare_metadata_csv(table_name: str, table_df: pd.DataFrame) -> pd.DataFrame:
+    """Shape a metadata DataFrame for its Anaplan file source.
+
+    Two consistent transforms so the reporting model's imports get
+    exactly the columns they expect:
+
+    * Prepend a 1-based counter column matching the CT list
+      (``WS_CT``, ``MOD_CT``, ...). Only applied to tables that have a
+      configured counter — activity codes carry their own key.
+    * Coerce every boolean column to ``1`` / ``0``. Anaplan's Boolean
+      line items reject ``True`` / ``False`` literals from Bulk imports.
+    """
+    df = table_df.copy()
+    for col in df.columns:
+        if df[col].dtype == bool:
+            df[col] = df[col].astype(int)
+    counter_col = _TABLE_TO_COUNTER_COLUMN.get(table_name)
+    if counter_col:
+        df.insert(0, counter_col, range(1, len(df) + 1))
+    return df
+
 
 def upload_audit_data(
     client: APIClient,
@@ -299,6 +332,7 @@ def _upload_via_process(
                 )
                 table_df = pd.DataFrame()
 
+            table_df = _prepare_metadata_csv(table_name, table_df)
             csv_text = table_df.to_csv(index=False)
             upload_file_chunks(
                 client,

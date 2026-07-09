@@ -5,6 +5,28 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.15] — 2026-07-09 — Emit the columns the CT imports actually want
+
+### Fixed
+
+- **``WORKSPACE_LIST.csv`` now includes ``sizeAllowance`` and
+  ``currentSize``.** ``list_workspaces`` now always sends
+  ``?tenantDetails=true`` and the :class:`Workspace` model carries the
+  two new fields. Without the flag Anaplan omits them and the
+  reporting model's Workspaces module has nothing to show in the size
+  columns.
+- **Every metadata CSV now leads with its counter column** — ``WS_CT``,
+  ``USER_CT``, ``MOD_CT``, ``ACT_CT``, ``CW_CT`` — populated with a
+  1-based row index. The property-based ``Import into WS_CT`` and its
+  siblings depend on this key column being present. Activity codes
+  keep their natural key and get no counter.
+- **Boolean columns coerce to ``1`` / ``0``** on the way out. Anaplan
+  Boolean line items reject ``True`` / ``False`` string literals from
+  Bulk imports, and the workspace ``active`` flag was landing as text
+  in the reporting model.
+
+---
+
 ## [3.2.14] — 2026-07-09 — Resolve nested action names + sync target lists
 
 ### Added
