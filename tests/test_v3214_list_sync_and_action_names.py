@@ -19,7 +19,7 @@ import pytest
 import respx
 
 from anaplan_audit.api.integration import _summarize_nested_results, run_process
-from anaplan_audit.api.transactional import get_list_item_codes
+from anaplan_audit.api.transactional import get_list_item_identifiers
 from anaplan_audit.exceptions import UnexpectedResponseError
 from tests.conftest import make_client
 
@@ -113,8 +113,11 @@ class TestActionNameResolution:
         assert "Load Users" in excinfo.value.context["failed_nested"]
 
 
-class TestGetListItemCodes:
-    def test_returns_set_of_codes(self) -> None:
+class TestGetListItemIdentifiers:
+    def test_returns_union_of_codes_and_names(self) -> None:
+        # v3.2.18: identifiers now include BOTH code and name because
+        # Anaplan enforces uniqueness on both columns independently.
+        # A value present in either would collide on POST.
         with respx.mock:
             respx.get(
                 f"{BASE}/workspaces/{WS}/models/{MODEL}/lists/L1/items",
@@ -124,17 +127,26 @@ class TestGetListItemCodes:
                     200,
                     json={
                         "listItems": [
-                            {"id": "1", "code": "user.loggedIn"},
-                            {"id": "2", "code": "user.loggedOut"},
-                            {"id": "3", "code": ""},  # skip empty codes
-                            {"id": "4"},  # skip missing code
+                            {"id": "1", "code": "user.loggedIn", "name": "User Log In"},
+                            {"id": "2", "code": "usr-38", "name": "USR-38"},
+                            {"id": "3", "code": "", "name": "just-a-name"},
+                            {"id": "4", "code": "just-a-code"},
+                            {"id": "5"},  # both missing → skip
                         ]
                     },
                 )
             )
             with make_client() as client:
-                codes = get_list_item_codes(client, BASE, WS, MODEL, "L1")
-        assert codes == {"user.loggedIn", "user.loggedOut"}
+                identifiers = get_list_item_identifiers(client, BASE, WS, MODEL, "L1")
+        # Both codes and both names present, empties skipped.
+        assert identifiers == {
+            "user.loggedIn",
+            "User Log In",
+            "usr-38",
+            "USR-38",
+            "just-a-name",
+            "just-a-code",
+        }
 
     def test_handles_items_key_variant(self) -> None:
         # Some Anaplan responses use "items" instead of "listItems".
@@ -145,12 +157,12 @@ class TestGetListItemCodes:
             ).mock(
                 return_value=httpx.Response(
                     200,
-                    json={"items": [{"id": "1", "code": "X"}]},
+                    json={"items": [{"id": "1", "code": "X", "name": "Y"}]},
                 )
             )
             with make_client() as client:
-                codes = get_list_item_codes(client, BASE, WS, MODEL, "L1")
-        assert codes == {"X"}
+                identifiers = get_list_item_identifiers(client, BASE, WS, MODEL, "L1")
+        assert identifiers == {"X", "Y"}
 
 
 class TestSyncListsTransactional:

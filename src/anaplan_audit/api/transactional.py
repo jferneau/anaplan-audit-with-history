@@ -87,20 +87,27 @@ def list_module_line_items(
     return [LineItem.model_validate(li) for li in data.get("items", [])]
 
 
-def get_list_item_codes(
+def get_list_item_identifiers(
     client: APIClient,
     integration_uri: str,
     workspace_id: str,
     model_id: str,
     list_id: str,
 ) -> set[str]:
-    """Return the set of existing item codes for a list.
+    """Return the set of existing item identifiers (codes plus names).
 
-    Uses the ``?includeAll=true`` query parameter so a single response
-    covers every item — the endpoint accepts a paginated form too, but
-    a set-membership check doesn't need the ordering. If Anaplan starts
-    returning a ``meta.paging.nextUrl`` the caller must handle it; for
-    now we rely on ``includeAll`` and log a warning if paging appears.
+    Anaplan enforces uniqueness on **both** the ``code`` and ``name``
+    columns of a list independently, so a caller trying to add an item
+    idempotently has to check both. Reporting-model imports (e.g. the
+    saved-view import that populates ``EVENT_ID``) frequently produce
+    items where ``code`` differs from ``name`` — an observed value
+    absent from the code set may still collide with an existing name.
+    Returning the union of the two lets the caller skip anything that
+    would collide on either side.
+
+    Uses ``?includeAll=true`` so a single response covers every item;
+    if Anaplan returns a paged response the first page is used and a
+    warning is emitted so the caller knows coverage was incomplete.
 
     Args:
         client: An authenticated :class:`APIClient`.
@@ -110,7 +117,8 @@ def get_list_item_codes(
         list_id: Target list ID.
 
     Returns:
-        A ``set`` of code strings. Items without a ``code`` are skipped.
+        A ``set`` containing every non-empty ``code`` and ``name`` from
+        the list.
     """
     url = (
         f"{integration_uri}/workspaces/{workspace_id}/models/{model_id}"
@@ -119,7 +127,12 @@ def get_list_item_codes(
     resp = client.get(url)
     data = resp.json()
     items = data.get("listItems", data.get("items", []))
-    codes: set[str] = {str(item["code"]) for item in items if item.get("code") not in (None, "")}
+    identifiers: set[str] = set()
+    for item in items:
+        for key in ("code", "name"):
+            v = item.get(key)
+            if v not in (None, ""):
+                identifiers.add(str(v))
     next_url = data.get("meta", {}).get("paging", {}).get("nextUrl")
     if next_url:
         logger.warning(
@@ -127,8 +140,12 @@ def get_list_item_codes(
             list_id=list_id,
             note="Anaplan returned a paged response; only page 1 was consumed.",
         )
-    logger.debug("list_item_codes_fetched", list_id=list_id, code_count=len(codes))
-    return codes
+    logger.debug(
+        "list_item_identifiers_fetched",
+        list_id=list_id,
+        identifier_count=len(identifiers),
+    )
+    return identifiers
 
 
 def add_list_items(

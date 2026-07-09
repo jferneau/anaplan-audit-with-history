@@ -23,7 +23,7 @@ from anaplan_audit.api.integration import (
 )
 from anaplan_audit.api.transactional import (
     add_list_items,
-    get_list_item_codes,
+    get_list_item_identifiers,
     list_lists,
     list_module_line_items,
     list_modules,
@@ -652,7 +652,7 @@ def _sync_lists_transactional(
             continue
 
         try:
-            existing = get_list_item_codes(client, integration_uri, ws_id, m_id, list_id)
+            existing = get_list_item_identifiers(client, integration_uri, ws_id, m_id, list_id)
         except Exception as exc:
             log.warning(
                 "list_sync_fetch_failed",
@@ -661,6 +661,8 @@ def _sync_lists_transactional(
             )
             continue
 
+        # `existing` is the union of every list item's code AND name — a
+        # value that matches either would raise DUPLICATE at POST time.
         new_codes = sorted(observed - existing)
         if not new_codes:
             log.info(

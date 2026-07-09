@@ -5,6 +5,27 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.2.18] — 2026-07-09 — Skip list-item name collisions, not just code collisions
+
+### Fixed
+
+- **``syncLists`` now diffs against the union of existing codes *and*
+  names**, not codes only. Anaplan enforces uniqueness on both columns
+  independently — if the reporting model's saved-view import populated
+  the list with items whose ``name = "USR-38"`` but ``code`` differs,
+  a subsequent POST of ``{"code": "USR-38", "name": "USR-38"}``
+  collides on the name column even though the code appeared new.
+  Reproduces exactly what the live tenant reported:
+  ``failureType: DUPLICATE — duplicate -- column name:name, value:USR-38``.
+
+### Changed
+
+- **``get_list_item_codes`` → ``get_list_item_identifiers``** and now
+  returns the union of every non-empty ``code`` and ``name`` in the
+  list. Internal helper — no external callers depend on the old name.
+
+---
+
 ## [3.2.17] — 2026-07-09 — Surface Anaplan's rejection reason on list/cell writes
 
 ### Fixed
