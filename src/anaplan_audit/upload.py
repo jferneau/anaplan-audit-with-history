@@ -21,6 +21,13 @@ from anaplan_audit.api.integration import (
     upload_and_import,
     upload_file_chunks,
 )
+from anaplan_audit.api.transactional import (
+    add_list_items,
+    list_lists,
+    list_module_line_items,
+    list_modules,
+    write_module_cells,
+)
 from anaplan_audit.config import Settings
 from anaplan_audit.exceptions import ConfigError
 
@@ -143,6 +150,7 @@ def upload_audit_data(
     _upload_last_run_to_anaplan(
         client, settings, new_last_run, log, file_map=file_map, import_map=import_map
     )
+    _write_refresh_log_transactional(client, settings, new_last_run, row_count=len(df), log=log)
     _update_last_run(settings, new_last_run)
 
     log.info("upload_complete", new_last_run=new_last_run)
@@ -384,6 +392,139 @@ def _upload_last_run_to_anaplan(
         last_run_epoch=last_run_epoch,
         last_run_utc=last_run_utc,
     )
+
+
+def _write_refresh_log_transactional(
+    client: APIClient,
+    settings: Settings,
+    last_run_epoch: int,
+    *,
+    row_count: int,
+    log: structlog.stdlib.BoundLogger,
+) -> None:
+    """Append a batch row and write the refresh-log module cells.
+
+    Two Transactional API steps:
+
+    1. Add a new item to the ``BATCH_ID`` list with ``code`` set to
+       ``last_run_epoch`` as a string.
+    2. Write two cells in the refresh log module, both dimensioned by
+       the new BATCH_ID item — ``Time Stamp`` (ISO 8601 UTC) and
+       ``Audit Records Loaded`` (the count of rows this run pushed).
+
+    The path is disabled unless both ``batchIdListName`` and
+    ``refreshLogModuleName`` are set. Any failure logs a warning and
+    returns — the audit data has already landed at this point, so a
+    refresh-log write failure must never fail the pipeline.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        settings: Application settings.
+        last_run_epoch: Epoch seconds for the batch code.
+        row_count: Number of audit rows written this run.
+        log: Bound logger with workspace/model context.
+    """
+    target = settings.targetAnaplanModel
+    objects = target.objects
+
+    if not objects.batchIdListName or not objects.refreshLogModuleName:
+        return
+
+    integration_uri = settings.uris.integrationUri
+    ws_id = target.workspaceId
+    m_id = target.modelId
+    batch_code = str(last_run_epoch)
+    timestamp_iso = datetime.fromtimestamp(last_run_epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    try:
+        lists = list_lists(client, integration_uri, ws_id, m_id)
+        list_id = next(
+            (item.id for item in lists if item.name == objects.batchIdListName),
+            "",
+        )
+        if not list_id:
+            available = ", ".join(sorted(item.name for item in lists)[:20]) or "(none)"
+            log.warning(
+                "refresh_log_list_not_found",
+                list_name=objects.batchIdListName,
+                available=available,
+            )
+            return
+
+        modules = list_modules(client, integration_uri, ws_id, m_id)
+        module_id = next(
+            (m.id for m in modules if m.name == objects.refreshLogModuleName),
+            "",
+        )
+        if not module_id:
+            available = ", ".join(sorted(m.name for m in modules)[:20]) or "(none)"
+            log.warning(
+                "refresh_log_module_not_found",
+                module_name=objects.refreshLogModuleName,
+                available=available,
+            )
+            return
+
+        line_items = list_module_line_items(client, integration_uri, ws_id, m_id, module_id)
+        li_by_name = {li.name: li.id for li in line_items}
+        timestamp_li_id = li_by_name.get(objects.refreshLogTimeStampLineItem, "")
+        records_li_id = li_by_name.get(objects.refreshLogRecordsLoadedLineItem, "")
+        missing = [
+            n
+            for n, v in (
+                (objects.refreshLogTimeStampLineItem, timestamp_li_id),
+                (objects.refreshLogRecordsLoadedLineItem, records_li_id),
+            )
+            if not v
+        ]
+        if missing:
+            available = ", ".join(sorted(li_by_name)[:20]) or "(none)"
+            log.warning(
+                "refresh_log_line_items_not_found",
+                missing=missing,
+                available=available,
+            )
+            return
+
+        add_list_items(
+            client,
+            integration_uri,
+            ws_id,
+            m_id,
+            list_id,
+            [{"code": batch_code}],
+        )
+
+        dimensions = [{"dimensionId": list_id, "itemCode": batch_code}]
+        write_module_cells(
+            client,
+            integration_uri,
+            ws_id,
+            m_id,
+            module_id,
+            [
+                {
+                    "lineItemId": timestamp_li_id,
+                    "dimensions": dimensions,
+                    "value": timestamp_iso,
+                },
+                {
+                    "lineItemId": records_li_id,
+                    "dimensions": dimensions,
+                    "value": row_count,
+                },
+            ],
+        )
+
+        log.info(
+            "refresh_log_written",
+            batch_code=batch_code,
+            timestamp=timestamp_iso,
+            records_loaded=row_count,
+        )
+    except Exception as exc:
+        # Refresh log is a display convenience; never fail the run over it.
+        log.warning("refresh_log_write_failed", error=str(exc))
 
 
 def _update_last_run(settings: Settings, new_last_run: int) -> None:

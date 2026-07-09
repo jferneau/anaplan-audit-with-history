@@ -124,6 +124,27 @@ class TargetModelObjects(BaseModel):
     lastRunFileName: str = ""
     lastRunImportName: str = ""
 
+    # --- Refresh Log via Transactional API ------------------------------
+    # When both list and module are set, the tool appends a run entry to
+    # the list (code = epoch seconds) and writes the two named line-item
+    # cells for that batch — no file/import mapping needed inside the
+    # target model. Leave any blank to disable the refresh-log path.
+    batchIdListName: str = ""
+    """Name of the BATCH_ID list. A new item is added on each successful
+    run with epoch seconds as its Code, before the refresh log cells are
+    written. Leave blank to skip the transactional refresh-log path."""
+
+    refreshLogModuleName: str = ""
+    """Name of the module receiving the refresh-log cells."""
+
+    refreshLogTimeStampLineItem: str = "Time Stamp"
+    """Line-item name in the refresh log module that receives the ISO
+    UTC timestamp of this run (as a string)."""
+
+    refreshLogRecordsLoadedLineItem: str = "Audit Records Loaded"
+    """Line-item name in the refresh log module that receives the count
+    of audit rows loaded on this run (as an integer)."""
+
     # --- Legacy / explicit-override IDs ---------------------------------
     auditFileId: str = ""
     auditImportId: str = ""
