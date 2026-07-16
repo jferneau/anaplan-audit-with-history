@@ -115,16 +115,21 @@ class Model(BaseModel):
     single exception of ``categoryValues`` which the orchestrator drops
     explicitly, matching Quinn's v1 (see spec Section 2).
 
-    Numeric byte-count fields (``memoryUsage``, ``currentSize``) and the
-    integer serial number default to ``0`` so pandas / to_sql infers
-    ``INTEGER``. Date-shaped fields (``isoCreationDate``, ``lastModified``,
-    ``lastServerRestartDate``) use :data:`StrCoerce` because Anaplan
-    returns them as ISO 8601 strings (e.g.
-    ``"2026-07-06T20:02:34.000+0000"``), and the reporting model's
+    ``memoryUsage`` and ``lastSavedSerialNumber`` default to ``0`` so
+    pandas / to_sql infers ``INTEGER``. ``isoCreationDate`` and
+    ``lastModified`` use text — Anaplan returns them as ISO 8601 strings
+    (e.g. ``"2026-07-06T20:02:34.000+0000"``), and the reporting model's
     ``SYS Models`` staging line items also expect text (formulas do
-    ``LEFT(<field>, 19)`` to trim to the display form). ``StrCoerce``
-    additionally tolerates the epoch-millisecond form some older API
-    responses returned, so a tenant on either shape lands cleanly.
+    ``LEFT(<field>, 19)`` to trim to the display form). ``lastModified``
+    uses :data:`StrCoerce` to tolerate the epoch-millisecond variant
+    some older responses returned.
+
+    ``currentSize`` and ``lastServerRestartDate`` are deliberately
+    absent: the model-export-restoration spec listed them but Anaplan's
+    ``?modelDetails=true`` response does not include them for model
+    endpoints (confirmed against a 41-model live tenant — 41/41 landed
+    null). Declaring them here would only ship two dead columns in
+    every CSV.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -139,8 +144,6 @@ class Model(BaseModel):
     lastSavedSerialNumber: int = 0
     lastModifiedByUserGuid: str = ""
     memoryUsage: int = 0
-    currentSize: int = 0
-    lastServerRestartDate: StrCoerce = ""
     lastModified: StrCoerce = ""
     """Anaplan's last-modification timestamp. Returned as ISO 8601 text
     (``"YYYY-MM-DDTHH:MM:SS.mmm+ZZZZ"``); the reporting model's

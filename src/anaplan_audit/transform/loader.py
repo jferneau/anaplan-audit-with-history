@@ -239,8 +239,6 @@ SELECT
     u.userName    AS lastModifiedByEmail,
     u.displayName AS lastModifiedByDisplayName,
     m.memoryUsage,
-    m.currentSize,
-    m.lastServerRestartDate,
     m.lastModified
 FROM models m
 LEFT JOIN users u ON m.lastModifiedByUserGuid = u.id
