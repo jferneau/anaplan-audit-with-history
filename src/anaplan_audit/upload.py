@@ -89,6 +89,7 @@ _TABLE_TO_FILE_ATTR: list[tuple[str, str]] = [
     ("users", "usersFileName"),
     ("models", "modelsFileName"),
     ("actions", "actionsFileName"),
+    ("files", "filesFileName"),
     ("cloudworks", "cloudworksFileName"),
     ("act_codes", "activityCodesFileName"),
 ]
@@ -101,6 +102,7 @@ _TABLE_TO_COUNTER_COLUMN: dict[str, str] = {
     "users": "USR_CT",
     "models": "MOD_CT",
     "actions": "ACT_CT",
+    "files": "FILE_CT",
     "cloudworks": "CW_CT",
 }
 
