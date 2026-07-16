@@ -54,7 +54,7 @@ def list_models(
 
     ``?modelDetails=true`` is always sent so the response carries the
     ``lastModifiedByUserGuid`` / ``memoryUsage`` / ``lastServerRestartDate``
-    / ``lastSavedSerialNumber`` / ``isoCreationDate`` / ``lastModifiedDate``
+    / ``lastSavedSerialNumber`` / ``isoCreationDate`` / ``lastModified``
     fields the reporting model's Tenant Detail > Models module needs
     (spec Section 3.1). Without the flag Anaplan returns a minimal
     projection and every one of those columns lands blank downstream —

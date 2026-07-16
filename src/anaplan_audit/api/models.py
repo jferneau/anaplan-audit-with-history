@@ -118,7 +118,7 @@ class Model(BaseModel):
     Numeric fields default to ``0`` rather than ``None`` so
     :func:`pandas.DataFrame` / :func:`to_sql` infers ``INTEGER`` rather
     than an object column — matters for the ``Number``-formatted
-    Anaplan line items (``memoryUsage``, ``lastModifiedDate``, …).
+    Anaplan line items (``memoryUsage``, ``lastModified``, …).
     """
 
     model_config = ConfigDict(extra="allow")
@@ -135,7 +135,15 @@ class Model(BaseModel):
     memoryUsage: int = 0
     currentSize: int = 0
     lastServerRestartDate: int = 0
-    lastModifiedDate: int = 0
+    lastModified: int = 0
+    """Epoch milliseconds of the model's last modification.
+
+    Named ``lastModified`` (not ``lastModifiedDate``) to match the
+    field name the Anaplan Integration API actually returns from
+    ``GET /workspaces/{ws}/models?modelDetails=true`` — which is
+    also the source-column name the reporting model's
+    ``SYS Models > lastModified`` staging line item expects.
+    """
 
 
 class Action(BaseModel):
