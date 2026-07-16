@@ -96,11 +96,13 @@ class TestPrepareMetadataCsv:
 
     def test_ct_counter_column_added_for_every_ct_table(self) -> None:
         # Each mapped table gets its counter prepended with 1-based rows.
+        # v3.5.0 added ``files`` -> ``FILE_CT`` alongside the original five.
         expected = {
             "workspaces": "WS_CT",
             "users": "USR_CT",
             "models": "MOD_CT",
             "actions": "ACT_CT",
+            "files": "FILE_CT",
             "cloudworks": "CW_CT",
         }
         assert expected == _TABLE_TO_COUNTER_COLUMN

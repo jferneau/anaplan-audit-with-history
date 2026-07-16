@@ -31,6 +31,7 @@ from anaplan_audit.api.client import APIClient
 from anaplan_audit.api.cloudworks import list_integrations
 from anaplan_audit.api.integration import (
     list_actions,
+    list_files,
     list_models,
     list_processes,
     list_workspaces,
@@ -38,6 +39,7 @@ from anaplan_audit.api.integration import (
 from anaplan_audit.api.models import (
     Action,
     CloudWorksIntegration,
+    ImportDataSource,
     Model,
     Process,
     User,
@@ -485,6 +487,7 @@ def _fetch_metadata(
     all_models: list[dict[str, object]] = []
     all_actions: list[dict[str, object]] = []
     all_processes: list[dict[str, object]] = []
+    all_files: list[dict[str, object]] = []
     model_names: dict[str, str] = {}
 
     # The (workspace, model) pairs actually in scope. Action/process metadata
@@ -538,6 +541,17 @@ def _fetch_metadata(
                     p_dict["workspaceId"] = ws_id
                     p_dict["modelId"] = m.id
                     all_processes.append(p_dict)
+
+                # v3.5.0 — files feed the reporting model's SYS Files
+                # module. Same 404-risk profile as actions (a selected
+                # model that's archived / read-only can 404), so it
+                # shares the same try/except.
+                files = list_files(client, uri, ws_id, m.id)
+                for f in files:
+                    f_dict = f.model_dump()
+                    f_dict["workspaceId"] = ws_id
+                    f_dict["modelId"] = m.id
+                    all_files.append(f_dict)
             except Exception as exc:
                 # A single selected-but-inaccessible model is logged and
                 # skipped rather than crashing the whole audit run.
@@ -561,6 +575,10 @@ def _fetch_metadata(
         "models": _metadata_frame(all_models, Model, extra=["workspaceId"]),
         "actions": _metadata_frame(all_actions, Action, extra=["workspaceId", "model_id"]),
         "processes": _metadata_frame(all_processes, Process, extra=["workspaceId", "modelId"]),
+        # v3.5.0 — ``files`` is a fresh dataset. ImportDataSource declares
+        # ``id`` + ``name``; ``workspaceId`` / ``modelId`` are attached in
+        # the loop above.
+        "files": _metadata_frame(all_files, ImportDataSource, extra=["workspaceId", "modelId"]),
         "act_codes": activity_df,  # SQL: act_codes ac
     }
     return datasets, ws_names, model_names

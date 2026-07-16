@@ -5,6 +5,33 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.5.0] — 2026-07-16 — SYS Files metadata fetch
+
+### Added
+
+- **``files`` metadata dataset.** ``_fetch_metadata`` now calls
+  ``list_files`` per selected model alongside actions/processes,
+  attaches ``workspaceId`` + ``modelId``, and stores the result in
+  the ``files`` SQLite table. Previously ``FILE_LIST.csv`` uploaded
+  empty every run and the reporting model's ``SYS Files`` module +
+  ``Import into FILE_CT`` had no data to consume.
+- ``files`` slotted into ``_TABLE_TO_FILE_ATTR`` between ``actions``
+  and ``cloudworks``, matching the reporting model's expected process
+  ordering.
+- ``FILE_CT`` counter column added to ``_TABLE_TO_COUNTER_COLUMN`` so
+  the property-based ``Import into FILE_CT`` has its key column.
+- ``TestFilesDatasetWiring`` + ``TestListFilesClient`` pin the
+  upload-loop position and the API-client behavior.
+
+### Notes
+
+- No new config knob needed — the ``filesFileName`` setting has been
+  in ``TargetModelObjects`` since v3.2.9; it just had no data feeding
+  it. ``FILE_LIST.csv`` (default filename) is what the reporting
+  model expects.
+
+---
+
 ## [3.4.0] — 2026-07-16 — Model History picks up `Target User` column
 
 ### Added
