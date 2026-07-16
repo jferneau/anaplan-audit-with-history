@@ -5,6 +5,40 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.6.0] — 2026-07-16 — CloudWorks blueprint expansion
+
+### Added
+
+- **``CloudWorksIntegration`` declares every top-level field** the
+  reporting model's ``SYS Cloudworks`` module consumes: ``createdBy``,
+  ``creationDate``, ``modifiedBy``, ``modificationDate``, ``uxVisible``,
+  ``notificationId``, ``processId``, plus the nested ``latestRun`` and
+  ``schedule`` dicts. Before v3.6.0 only 5 fields were declared and
+  ``CLOUDWORKS_LIST.csv`` shipped a 5-column stub — most of the
+  ``SYS Cloudworks`` module was blank.
+- **Nested dicts flattened via ``pd.json_normalize``** in the
+  orchestrator's ``_fetch_metadata``. Anaplan's ``SYS Cloudworks`` line
+  items use dotted names literally (``latestRun.triggeredBy``,
+  ``schedule.name``, ``schedule.status``, …); the property-based
+  ``Import into SYS Cloudworks`` matches those against dotted CSV
+  column names, so the tool must flatten before ``to_csv``.
+- **``TestCloudWorksIntegrationDeclaresExpectedFields`` +
+  ``TestNestedFieldsFlattenToDottedColumns``** — 5 regression tests
+  guarding the Pydantic field list, ``extra="allow"`` retention, real
+  API-shape parsing, dotted-column flattening, and the empty-nested
+  edge case.
+
+### Notes
+
+- ``extra="allow"`` remains on ``CloudWorksIntegration`` so any future
+  Anaplan-added field flows through to the CSV automatically.
+- Anaplan-side: nothing new needed. Your ``SYS Cloudworks`` module and
+  ``Import into SYS Cloudworks`` action already exist with all these
+  line items configured; they just weren't receiving data. First run
+  after this merges should populate every currently-blank column.
+
+---
+
 ## [3.5.0] — 2026-07-16 — SYS Files metadata fetch
 
 ### Added

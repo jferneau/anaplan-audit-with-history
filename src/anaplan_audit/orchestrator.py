@@ -477,6 +477,20 @@ def _fetch_metadata(
     cloudworks_data = [
         c.model_dump() for c in list_integrations(client, settings.uris.cloudWorksUri)
     ]
+    # v3.6.0 — the reporting model's SYS Cloudworks module has line
+    # items named ``latestRun.triggeredBy``, ``schedule.name``, etc.
+    # Anaplan matches those against dotted CSV column names, so flatten
+    # the nested dicts here. ``pd.json_normalize`` on an empty list
+    # produces a 0-row / 0-column frame, which _metadata_frame patches
+    # by re-declaring every top-level field from CloudWorksIntegration.
+    cloudworks_flat: list[dict[str, object]]
+    if cloudworks_data:
+        cloudworks_flat = [
+            {str(k): v for k, v in row.items()}
+            for row in pd.json_normalize(cloudworks_data).to_dict(orient="records")
+        ]
+    else:
+        cloudworks_flat = []
 
     # Load activity_events.csv
     activity_csv = (
@@ -571,7 +585,7 @@ def _fetch_metadata(
     datasets = {
         "workspaces": _metadata_frame(workspaces_data, Workspace),
         "users": _metadata_frame(users_data, User),
-        "cloudworks": _metadata_frame(cloudworks_data, CloudWorksIntegration),  # SQL: cloudworks cw
+        "cloudworks": _metadata_frame(cloudworks_flat, CloudWorksIntegration),  # SQL: cloudworks cw
         "models": _metadata_frame(all_models, Model, extra=["workspaceId"]),
         "actions": _metadata_frame(all_actions, Action, extra=["workspaceId", "model_id"]),
         "processes": _metadata_frame(all_processes, Process, extra=["workspaceId", "modelId"]),
