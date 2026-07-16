@@ -107,7 +107,10 @@ class TestStagingViews:
             "v_role",
             "v_target_user",
         }
-        assert expected == views
+        # Subset — ``load_to_sqlite`` also creates ``v_models_export``
+        # (v3.3.1). This test only cares that the seven additionalAttributes
+        # staging views exist, not that they are the only views in the DB.
+        assert expected.issubset(views)
 
     def test_view_returns_distinct_populated_pairs(self, tmp_path: Path) -> None:
         # Three events: two with the same app, one with different app.
@@ -163,7 +166,8 @@ class TestStagingViews:
                 row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='view'")
             }
         # uxAppPage produces both v_ux_app and v_ux_page.
-        assert views == {"v_ux_app", "v_ux_page", "v_action"}
+        additional_attribute_views = views - {"v_models_export"}
+        assert additional_attribute_views == {"v_ux_app", "v_ux_page", "v_action"}
 
     def test_disabling_a_category_drops_its_stale_view(self, tmp_path: Path) -> None:
         db_path = tmp_path / "test.db"
@@ -177,7 +181,10 @@ class TestStagingViews:
             views = {
                 row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='view'")
             }
-        assert views == {"v_ux_app", "v_ux_page"}
+        # ``v_models_export`` is created by ``load_to_sqlite`` — filter it
+        # out; this test only cares about the staging-view lifecycle.
+        additional_attribute_views = views - {"v_models_export"}
+        assert additional_attribute_views == {"v_ux_app", "v_ux_page"}
 
     def test_first_run_no_events_table_is_a_noop(self, tmp_path: Path) -> None:
         # events table doesn't exist yet; call must not raise. This
