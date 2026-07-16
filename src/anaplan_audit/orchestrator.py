@@ -54,9 +54,11 @@ from anaplan_audit.exceptions import ConfigError, RunLockError
 from anaplan_audit.model_history.history_service import fetch_model_history
 from anaplan_audit.model_history.history_transform_service import normalize_model_history
 from anaplan_audit.model_history.upload import upload_model_history
+from anaplan_audit.transform.additional_attributes import enrich_event_dicts
 from anaplan_audit.transform.loader import (
     backup_database,
     ensure_model_history_tables,
+    ensure_staging_views,
     load_to_sqlite,
     purge_old_audit_events,
     purge_old_history,
@@ -244,7 +246,22 @@ def _run_locked(
                 # Only added when non-empty — pd.json_normalize([]) yields a 0x0
                 # DataFrame with no columns, which would create a schema-less table
                 # and break the unique index creation in _upsert_events.
-                datasets["events"] = pd.json_normalize([e.model_dump() for e in events])
+                event_dumps = [e.model_dump() for e in events]
+                # v3.3.0 — enrich each event dump with the extracted
+                # additionalAttributes columns (spec Milestone 1) before
+                # json_normalize picks them up. Category gating and raw
+                # retention come from settings; when the whole feature is
+                # disabled, skip enrichment so the DataFrame stays a
+                # verbatim projection of the API payload.
+                aa_cfg = settings.additionalAttributes
+                if aa_cfg.enabled:
+                    enrich_event_dicts(
+                        event_dumps,
+                        enabled_categories=aa_cfg.enabled_category_names(),
+                        retain_raw=aa_cfg.retainRawJson,
+                        correlation_id=_bound_run_id(log),
+                    )
+                datasets["events"] = pd.json_normalize(event_dumps)
 
             log.info(
                 "pipeline_step_done",
@@ -257,6 +274,14 @@ def _run_locked(
             log.info("pipeline_step_start", step="load_sqlite")
             t0 = time.monotonic()
             load_to_sqlite(db_path, datasets)
+            # v3.3.0 — refresh the additionalAttributes staging views
+            # (spec Milestone 3). Idempotent and cheap; scoped to the
+            # categories the operator has opted into via emitLists.
+            if settings.additionalAttributes.enabled:
+                ensure_staging_views(
+                    db_path,
+                    view_categories=settings.additionalAttributes.emit_list_categories(),
+                )
             log.info("pipeline_step_done", step="load_sqlite", duration_ms=_elapsed(t0))
 
             # Step 5: Run SQL transform
@@ -647,6 +672,19 @@ def _resolve_names_to_ids(
 def _elapsed(start: float) -> int:
     """Return elapsed milliseconds since *start*."""
     return round((time.monotonic() - start) * 1000)
+
+
+def _bound_run_id(log: structlog.stdlib.BoundLogger) -> str | None:
+    """Pull the structlog-bound ``run_id`` off the logger, if any.
+
+    structlog's stdlib BoundLogger keeps bound context on a private
+    attribute; the extractor wants the run_id for correlation without
+    a hard dependency on the logger internals. If the attribute is
+    absent (mocked logger, tests) we degrade to ``None`` — the
+    extractor treats that as "no correlation".
+    """
+    context = getattr(log, "_context", {}) or {}
+    return context.get("run_id") if isinstance(context, dict) else None
 
 
 def _has_events_table(db_path: Path) -> bool:

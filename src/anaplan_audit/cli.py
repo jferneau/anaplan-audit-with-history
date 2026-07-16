@@ -284,6 +284,95 @@ def init(
     )
 
 
+@app.command("backfill-additional-attributes")
+def backfill_additional_attributes_cmd(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Path to settings.json"),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since",
+            help="ISO datetime (e.g. 2026-01-01) — only reparse events at/after this instant.",
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Reparse at most N rows."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Count what would be updated, then exit without writing."),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show DEBUG-level detail from the tool."),
+    ] = False,
+) -> None:
+    """Backfill ``additionalAttributes`` named columns on historical events.
+
+    Reconstructs the parsed attributes dict from the existing dotted
+    ``additionalAttributes.*`` columns on each row, re-runs the
+    extractor, and updates the row in place. Idempotent — a re-run is
+    a no-op because rows that already have ``additional_attributes_raw``
+    are skipped.
+    """
+    from datetime import UTC
+    from datetime import datetime as _datetime
+
+    from anaplan_audit.backfill import backfill_additional_attributes
+
+    try:
+        settings = load_settings(config)
+        log = configure_logging(
+            verbose=verbose,
+            tenant_name=settings.anaplanTenantName,
+        )
+        aa_cfg = settings.additionalAttributes
+
+        since_epoch_ms: int | None = None
+        if since:
+            try:
+                dt = _datetime.fromisoformat(since)
+            except ValueError as exc:
+                console.print(f"[red]Invalid --since value '{since}': {exc}[/red]")
+                raise typer.Exit(code=2) from exc
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            since_epoch_ms = int(dt.timestamp() * 1000)
+
+        log.info(
+            "backfill_cli_invoked",
+            since=since,
+            since_epoch_ms=since_epoch_ms,
+            limit=limit,
+            dry_run=dry_run,
+            categories_enabled=sorted(aa_cfg.enabled_category_names()),
+            retain_raw=aa_cfg.retainRawJson,
+        )
+
+        summary = backfill_additional_attributes(
+            Path(settings.database),
+            since_epoch_ms=since_epoch_ms,
+            limit=limit,
+            dry_run=dry_run,
+            enabled_categories=aa_cfg.enabled_category_names(),
+            retain_raw=aa_cfg.retainRawJson,
+        )
+
+        console.print(
+            "[green]Backfill complete.[/green] "
+            f"scanned={summary.rows_scanned} "
+            f"updated={summary.rows_updated} "
+            f"skipped_no_data={summary.rows_skipped_no_data} "
+            f"dry_run={summary.dry_run}"
+        )
+    except AnaplanAuditError as exc:
+        console.print(f"[red]Backfill failed: {exc}[/red]")
+        raise typer.Exit(code=exc.exit_code) from exc
+
+
 @app.command()
 def version() -> None:
     """Print version and dependency information."""

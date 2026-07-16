@@ -70,5 +70,18 @@
         "maxConcurrentExports": 5,
         "backupBeforePurge": true,
         "maxBackupsToKeep": 7
+    },
+    "_additionalAttributesComment": "v3.3.0 — extract UX / integration / action / process / role / target-user fields from each audit event's additionalAttributes payload into named SQLite columns, plus a full-fidelity JSON archive column. Feeds the v_ux_app / v_ux_page / v_cw_integration / v_action / v_process / v_role / v_target_user staging views (spec Section 6.3). Toggle a whole category off to leave its columns null; toggle emitLists off to keep the columns populated but drop the staging view (view is only useful when the reporting model has a matching list import wired). retainRawJson keeps the raw archive column; disable only if disk pressure justifies losing forward compatibility.",
+    "additionalAttributes": {
+        "enabled": true,
+        "retainRawJson": true,
+        "categories": {
+            "uxAppPage":     { "enabled": true,  "emitLists": true  },
+            "cwIntegration": { "enabled": true,  "emitLists": false },
+            "action":        { "enabled": true,  "emitLists": false },
+            "process":       { "enabled": true,  "emitLists": false },
+            "role":          { "enabled": false, "emitLists": false },
+            "targetUser":    { "enabled": false, "emitLists": false }
+        }
     }
 }
