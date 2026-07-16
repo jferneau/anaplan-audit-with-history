@@ -1,3 +1,3 @@
 """Anaplan Audit History v3 — extract, transform, and load audit data."""
 
-__version__ = "3.3.2"
+__version__ = "3.3.3"
