@@ -13,11 +13,17 @@ import pandas as pd
 import structlog
 
 from anaplan_audit.exceptions import SQLiteLoadError
+from anaplan_audit.transform.additional_attributes import ADDITIONAL_ATTRIBUTES_COLUMNS
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
 
 # The audit events table name as referenced by audit_query.sql.
 _EVENTS_TABLE = "events"
+
+# Bumped whenever the events-table schema gains columns. Read once per
+# run and stashed on the ``schema_version`` PRAGMA so operators (and
+# future migration branches) can tell what shape a given DB has.
+_EVENTS_SCHEMA_VERSION = 2
 
 # Backup file glob pattern, e.g. anaplan_audit_backup_20260412_143000.db
 _BACKUP_GLOB = "*_backup_*"
@@ -175,8 +181,17 @@ def _upsert_events(conn: sqlite3.Connection, df: pd.DataFrame) -> None:
     # Add any columns that appear in this batch but not in the existing table,
     # plus well-known optional additionalAttributes columns referenced by
     # audit_query.sql (so the query never fails on a tenant that hasn't yet
-    # produced UX, ADO, Workflow, or Comment events).
-    _ensure_event_columns(conn, pd.Index(list(df.columns) + _KNOWN_OPTIONAL_EVENT_COLUMNS))
+    # produced UX, ADO, Workflow, or Comment events), plus the extracted
+    # named columns owned by the additionalAttributes module (v3.3.0 schema
+    # version 2) so backfill and view creation always have the shape they
+    # expect regardless of what any given nightly batch happened to contain.
+    _ensure_event_columns(
+        conn,
+        pd.Index(
+            list(df.columns) + _KNOWN_OPTIONAL_EVENT_COLUMNS + ADDITIONAL_ATTRIBUTES_COLUMNS,
+        ),
+    )
+    conn.execute(f"PRAGMA user_version = {_EVENTS_SCHEMA_VERSION}")
 
     # Ensure a unique index on id for ON CONFLICT to work.
     conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{_EVENTS_TABLE}_id ON {_EVENTS_TABLE}(id)")
@@ -228,6 +243,106 @@ def _ensure_event_columns(
             # writes, so this is defensive only.
             if "duplicate column name" not in str(exc).lower():
                 raise
+
+
+# ---------------------------------------------------------------------------
+# Staging views for additionalAttributes list sources (spec Milestone 3)
+# ---------------------------------------------------------------------------
+
+
+# One view per category, each producing DISTINCT (code, name) pairs from
+# the events table. The reporting model's list imports read these as their
+# source (spec Section 6.3). Non-null / non-empty filters guarantee spec
+# Acceptance criterion #6 — no orphan rows land in Anaplan lists.
+_STAGING_VIEWS: dict[str, tuple[str, str, str]] = {
+    # category → (view name, id column, name column)
+    "uxAppPage_app": ("v_ux_app", "app_id", "app_name"),
+    "uxAppPage_page": ("v_ux_page", "page_id", "page_name"),
+    "cwIntegration": ("v_cw_integration", "integration_id", "integration_name"),
+    "action": ("v_action", "action_id", "action_name"),
+    "process": ("v_process", "process_id", "process_name"),
+    "role": ("v_role", "role_id", "role_name"),
+    "targetUser": ("v_target_user", "target_user_id", "target_user_name"),
+}
+
+# Category → the staging-view keys it owns (some categories, like
+# uxAppPage, produce more than one view because they carry two logically
+# distinct lists).
+_CATEGORY_TO_VIEWS: dict[str, list[str]] = {
+    "uxAppPage": ["uxAppPage_app", "uxAppPage_page"],
+    "cwIntegration": ["cwIntegration"],
+    "action": ["action"],
+    "process": ["process"],
+    "role": ["role"],
+    "targetUser": ["targetUser"],
+}
+
+
+def ensure_staging_views(
+    db_path: Path,
+    *,
+    view_categories: set[str] | None = None,
+) -> None:
+    """Create or refresh the additionalAttributes staging views.
+
+    Views feed the Anaplan list imports described in spec Section 6.3.
+    Every view emits distinct ``(code, name)`` pairs, filtered so no
+    row has a null or empty code or name — Anaplan lists reject empty
+    codes and would blow up the property-based imports downstream.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        view_categories: When set, only views owned by these categories
+            (per :data:`_CATEGORY_TO_VIEWS`) are created; the rest are
+            dropped if they exist so a category being switched off in
+            settings.json cleanly removes its stale view. ``None`` (the
+            default) creates every view.
+    """
+    if view_categories is None:
+        wanted_view_keys = set(_STAGING_VIEWS.keys())
+    else:
+        wanted_view_keys = set()
+        for cat in view_categories:
+            wanted_view_keys.update(_CATEGORY_TO_VIEWS.get(cat, []))
+
+    with closing(_connect(db_path)) as conn:
+        # Bail out cleanly if events doesn't exist yet — first-run
+        # scenario before any batches have landed.
+        events_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (_EVENTS_TABLE,),
+        ).fetchone()
+        if not events_exists:
+            logger.debug("staging_views_skipped_no_events_table")
+            return
+
+        for view_key, (view_name, id_col, name_col) in _STAGING_VIEWS.items():
+            if view_key not in wanted_view_keys:
+                # Drop unwanted views so a config toggle cleans up
+                # after itself; DROP VIEW IF EXISTS is a no-op when the
+                # view was never created.
+                conn.execute(f"DROP VIEW IF EXISTS {view_name}")
+                continue
+
+            # CREATE VIEW IF NOT EXISTS makes the create-refresh path
+            # idempotent while OR REPLACE would drop-and-recreate on
+            # every run; CREATE IF NOT EXISTS is enough because the
+            # underlying event columns don't change shape without a
+            # schema migration bump.
+            conn.execute(
+                f"CREATE VIEW IF NOT EXISTS {view_name} AS "
+                f'SELECT DISTINCT "{id_col}" AS code, "{name_col}" AS name '
+                f"FROM {_EVENTS_TABLE} "
+                f'WHERE "{id_col}" IS NOT NULL AND "{id_col}" != \'\' '
+                f'  AND "{name_col}" IS NOT NULL AND "{name_col}" != \'\''
+            )
+        conn.commit()
+
+    logger.info(
+        "staging_views_ensured",
+        wanted=sorted(wanted_view_keys),
+        total_defined=len(_STAGING_VIEWS),
+    )
 
 
 # ---------------------------------------------------------------------------

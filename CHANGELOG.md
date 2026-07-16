@@ -5,6 +5,58 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.0] — 2026-07-16 — `additionalAttributes` extractor + staging views + backfill
+
+Restores the UX / integration / action / process / role / target-user
+fields the reporting model used to pivot on, and future-proofs the
+pipeline against additional CEF fields Anaplan may add.
+
+### Added
+
+- **New extractor** ``anaplan_audit.transform.additional_attributes``
+  projects the parsed ``additionalAttributes`` dict onto 16 named
+  columns (spec Section 4) plus a stable ``additional_attributes_raw``
+  JSON archive column. Defensive against both dict and JSON-string
+  shapes; malformed JSON logs DEBUG and continues.
+- **Schema migration** — events table now carries the 17 owned columns
+  (idempotent ``ALTER TABLE ADD COLUMN``). Schema version bumped to 2
+  and recorded on ``PRAGMA user_version``.
+- **Staging views** — ``v_ux_app``, ``v_ux_page``, ``v_cw_integration``,
+  ``v_action``, ``v_process``, ``v_role``, ``v_target_user`` emit
+  distinct ``(code, name)`` pairs with null / empty filtering. Views
+  feed the list imports the spec's Section 6.3 introduces.
+- **``settings.json → additionalAttributes`` block** — top-level
+  ``enabled`` gate, per-category ``enabled`` / ``emitLists`` toggles,
+  and ``retainRawJson`` control. Defaults match the spec's Milestone 5
+  canonical block.
+- **New CLI subcommand** ``anaplan-audit backfill-additional-attributes``
+  with ``--since``, ``--limit``, ``--dry-run``, ``-v/--verbose``.
+  Rebuilds named columns from existing dotted ``additionalAttributes.*``
+  columns (functionally equivalent to a raw archive — see PR notes) and
+  writes ``additional_attributes_raw`` for every scanned row. Rich
+  progress bar, batch commits every 1000 rows, idempotent.
+
+### Notes
+
+- v3 does not have a CEF parser — the Anaplan Audit API v1 returns
+  JSON events directly, so the spec's "brace-depth" guidance doesn't
+  apply here. Symptoms it targeted (blank UX / app / page fields
+  downstream) still resolved because the underlying gap — no
+  category-level named columns for the reporting model — is filled.
+- Backfill reconstructs the parsed attributes dict from the dotted
+  ``additionalAttributes.*`` columns pandas' ``json_normalize`` was
+  already producing. Any field Anaplan starts emitting *after* v3.3.0
+  ships is captured verbatim by the new raw archive column; fields
+  Anaplan started emitting *before* v3.3.0 but that were never in the
+  dotted-column set on any prior version won't be recovered by
+  backfill on older DBs.
+- ``audit_query.sql`` and ``activity_events.csv`` are unchanged
+  (must-copy-verbatim per project convention). New named columns
+  reach the reporting model via the staging views and Anaplan-side
+  list imports (Milestone 6, applied by hand).
+
+---
+
 ## [3.2.18] — 2026-07-09 — Skip list-item name collisions, not just code collisions
 
 ### Fixed

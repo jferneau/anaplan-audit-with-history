@@ -192,6 +192,66 @@ class TargetModelConfig(BaseModel):
     objects: TargetModelObjects = TargetModelObjects()
 
 
+class AdditionalAttributesCategoryConfig(BaseModel):
+    """Per-category gate for the additionalAttributes feature.
+
+    ``enabled`` controls whether the category's named columns are
+    populated by the extractor. ``emitLists`` controls whether the
+    matching staging view (v_ux_app, v_ux_page, v_action, …) is
+    materialised — a caller might want the columns populated for local
+    querying but not exported for Anaplan list import.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enabled: bool = True
+    emitLists: bool = True
+
+
+class AdditionalAttributesConfig(BaseModel):
+    """Top-level config for the additionalAttributes extractor (v3.3.0).
+
+    Mirrors the ``modelHistory`` block's shape so operators reason
+    about the two features the same way. The default matches the
+    canonical block in the spec Milestone 5.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enabled: bool = True
+    """When ``False``, skip parsing entirely — no named columns are
+    populated on new events, no staging views are refreshed. Existing
+    data on disk is unaffected."""
+
+    retainRawJson: bool = True
+    """When ``True``, ``additional_attributes_raw`` is populated with a
+    stable JSON serialization of the parsed dict. Preserves forward
+    compatibility for fields the Section 4 map doesn't cover today."""
+
+    categories: dict[str, AdditionalAttributesCategoryConfig] = {
+        "uxAppPage": AdditionalAttributesCategoryConfig(enabled=True, emitLists=True),
+        "cwIntegration": AdditionalAttributesCategoryConfig(enabled=True, emitLists=False),
+        "action": AdditionalAttributesCategoryConfig(enabled=True, emitLists=False),
+        "process": AdditionalAttributesCategoryConfig(enabled=True, emitLists=False),
+        "role": AdditionalAttributesCategoryConfig(enabled=False, emitLists=False),
+        "targetUser": AdditionalAttributesCategoryConfig(enabled=False, emitLists=False),
+    }
+
+    def enabled_category_names(self) -> set[str]:
+        """Return the set of categories whose ``enabled`` flag is on."""
+        return {name for name, cfg in self.categories.items() if cfg.enabled}
+
+    def emit_list_categories(self) -> set[str]:
+        """Return the set of categories whose staging view should exist.
+
+        Requires both ``enabled`` (parser populates the columns) and
+        ``emitLists`` (the view is materialised). A category with
+        columns populated but no view is a valid opt-in: local querying
+        works, but the reporting model's list import isn't wired.
+        """
+        return {name for name, cfg in self.categories.items() if cfg.enabled and cfg.emitLists}
+
+
 class ModelHistoryConfig(BaseModel):
     """Configuration for the Anaplan Model History feature."""
 
@@ -273,6 +333,9 @@ class Settings(BaseSettings):
 
     # --- Model History ---
     modelHistory: ModelHistoryConfig = ModelHistoryConfig()
+
+    # --- additionalAttributes extractor (v3.3.0) ---
+    additionalAttributes: AdditionalAttributesConfig = AdditionalAttributesConfig()
 
     # --- Cert auth ---
     certPublicPath: str = ""
