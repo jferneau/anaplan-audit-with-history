@@ -218,7 +218,20 @@ class LineItem(BaseModel):
 
 
 class CloudWorksIntegration(BaseModel):
-    """A CloudWorks integration."""
+    """A CloudWorks integration.
+
+    Declares every top-level field the reporting model's ``SYS Cloudworks``
+    module consumes so ``_metadata_frame`` guarantees the column exists
+    on a zero-row response. ``latestRun`` and ``schedule`` are nested
+    dicts on the raw API response; the orchestrator flattens them via
+    :func:`pandas.json_normalize` into dotted columns
+    (``latestRun.triggeredBy``, ``schedule.name``, …) that match the
+    dotted line-item names on ``SYS Cloudworks`` blueprint.
+
+    ``extra="allow"`` still catches anything Anaplan adds without
+    requiring a code change; the ``SYS Cloudworks`` import will pick it
+    up if the reporting model has a matching line item.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -227,6 +240,15 @@ class CloudWorksIntegration(BaseModel):
     type: str = ""
     workspaceId: str = ""
     modelId: str = ""
+    createdBy: str = ""
+    creationDate: str = ""
+    modifiedBy: str = ""
+    modificationDate: str = ""
+    uxVisible: str = ""
+    notificationId: str = ""
+    processId: str = ""
+    latestRun: dict[str, str] = {}
+    schedule: dict[str, str] = {}
 
 
 class BulkUploadChunk(BaseModel):
