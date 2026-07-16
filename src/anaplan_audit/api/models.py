@@ -6,7 +6,7 @@ existing runs — but known fields are typed.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 
@@ -228,27 +228,41 @@ class CloudWorksIntegration(BaseModel):
     (``latestRun.triggeredBy``, ``schedule.name``, …) that match the
     dotted line-item names on ``SYS Cloudworks`` blueprint.
 
+    Every string field is typed as :data:`StrCoerce` because the
+    CloudWorks API is loosely typed — verified against a live tenant:
+    ``modifiedBy`` came back as ``None`` when never edited,
+    ``latestRun.success`` as a boolean, ``latestRun.executionErrorCode``
+    as an int. StrCoerce coerces all three to strings so no field
+    raises a ``ValidationError`` mid-fetch and every column lands as
+    text (which the reporting model's Text line items expect anyway).
+
+    Nested dicts use ``dict[str, Any]`` for the same reason: values
+    inside ``latestRun`` / ``schedule`` are a mix of str / int / bool /
+    None. ``pd.json_normalize`` flattens them to columns whose cells
+    are their native Python types; ``DataFrame.to_csv`` renders each
+    as its string form, which the property-based import happily
+    consumes.
+
     ``extra="allow"`` still catches anything Anaplan adds without
-    requiring a code change; the ``SYS Cloudworks`` import will pick it
-    up if the reporting model has a matching line item.
+    requiring a code change.
     """
 
     model_config = ConfigDict(extra="allow")
 
-    integrationId: str = ""
-    name: str = ""
-    type: str = ""
-    workspaceId: str = ""
-    modelId: str = ""
-    createdBy: str = ""
-    creationDate: str = ""
-    modifiedBy: str = ""
-    modificationDate: str = ""
-    uxVisible: str = ""
-    notificationId: str = ""
-    processId: str = ""
-    latestRun: dict[str, str] = {}
-    schedule: dict[str, str] = {}
+    integrationId: StrCoerce = ""
+    name: StrCoerce = ""
+    type: StrCoerce = ""
+    workspaceId: StrCoerce = ""
+    modelId: StrCoerce = ""
+    createdBy: StrCoerce = ""
+    creationDate: StrCoerce = ""
+    modifiedBy: StrCoerce = ""
+    modificationDate: StrCoerce = ""
+    uxVisible: StrCoerce = ""
+    notificationId: StrCoerce = ""
+    processId: StrCoerce = ""
+    latestRun: dict[str, Any] = {}
+    schedule: dict[str, Any] = {}
 
 
 class BulkUploadChunk(BaseModel):
