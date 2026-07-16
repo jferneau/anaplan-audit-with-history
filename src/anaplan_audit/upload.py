@@ -117,6 +117,112 @@ _TABLE_TO_SOURCE: dict[str, str] = {
 }
 
 
+# v3.7.0 — additionalAttributes staging views. Each view is emitted
+# as a two-column ``(code, name)`` CSV and uploaded to the named
+# Anaplan file source, ready for the reporting model's list imports.
+#
+# The tuple is (view name in SQLite, ``TargetModelObjects`` field
+# containing the file name, category name in ``AdditionalAttributesConfig``).
+# A view is uploaded when BOTH:
+#   * ``AdditionalAttributesConfig.categories[<cat>].emitLists`` is true, and
+#   * the file-name field is non-empty.
+# Either condition alone disables the upload for that view — the file-name
+# opt-out is intentional so a category can populate columns locally but
+# skip the Anaplan roundtrip.
+_STAGING_VIEW_UPLOADS: list[tuple[str, str, str]] = [
+    ("v_ux_app", "uxAppListFileName", "uxAppPage"),
+    ("v_ux_page", "uxPageListFileName", "uxAppPage"),
+    ("v_cw_integration", "cwIntegrationListFileName", "cwIntegration"),
+    ("v_action", "actionListFileName", "action"),
+    ("v_process", "processListFileName", "process"),
+    ("v_role", "roleListFileName", "role"),
+    ("v_target_user", "targetUserListFileName", "targetUser"),
+]
+
+
+def _upload_staging_views(
+    client: APIClient,
+    settings: Settings,
+    db_path: Path,
+    log: structlog.stdlib.BoundLogger,
+) -> None:
+    """Upload each enabled additionalAttributes staging view as a CSV.
+
+    Iterates :data:`_STAGING_VIEW_UPLOADS`. Skips a view when either
+    its file-name field is blank (opt-out) or the owning category's
+    ``emitLists`` is false (the SQLite view isn't even created in that
+    case, so the CSV would be empty). Missing views degrade to a
+    warning + empty CSV rather than a crash.
+
+    Args:
+        client: An authenticated :class:`APIClient`.
+        settings: Application settings.
+        db_path: SQLite database file.
+        log: Bound logger with workspace/model context.
+    """
+    target = settings.targetAnaplanModel
+    integration_uri = settings.uris.integrationUri
+    objects = target.objects
+    aa_cfg = settings.additionalAttributes
+    emit_categories = aa_cfg.emit_list_categories()
+
+    if not aa_cfg.enabled:
+        return
+
+    file_map = {
+        f.name: f.id
+        for f in list_files(client, integration_uri, target.workspaceId, target.modelId)
+    }
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        for view_name, file_attr, category in _STAGING_VIEW_UPLOADS:
+            file_name = getattr(objects, file_attr, "")
+            if not file_name:
+                # Opt-out: category may be enabled, but the operator has
+                # decided not to upload this view to Anaplan.
+                continue
+            if category not in emit_categories:
+                # emitLists=false — the view was never materialised or
+                # the category is fully disabled.
+                continue
+
+            file_id = _resolve_object_id("file", file_name, "", file_map, required=False, log=log)
+            if not file_id:
+                # File source doesn't exist in the reporting model yet.
+                # Not fatal — the operator can add it and re-run.
+                continue
+
+            try:
+                view_df = pd.read_sql_query(f'SELECT * FROM "{view_name}"', conn)
+            except Exception as exc:
+                # The view doesn't exist (fresh DB with no events yet, or
+                # category was previously disabled). Push an empty CSV so
+                # the reporting model's import runs cleanly with 0 rows.
+                log.debug(
+                    "staging_view_missing_for_upload",
+                    view=view_name,
+                    error=str(exc),
+                )
+                view_df = pd.DataFrame(columns=["code", "name"])
+
+            csv_text = view_df.to_csv(index=False)
+            upload_file_chunks(
+                client,
+                integration_uri,
+                target.workspaceId,
+                target.modelId,
+                file_id,
+                csv_text,
+            )
+            log.info(
+                "staging_view_csv_uploaded",
+                view=view_name,
+                file_name=file_name,
+                category=category,
+                row_count=len(view_df),
+            )
+
+
 def _prepare_metadata_csv(table_name: str, table_df: pd.DataFrame) -> pd.DataFrame:
     """Shape a metadata DataFrame for its Anaplan file source.
 
@@ -361,6 +467,12 @@ def _upload_via_process(
                 file_name=file_name,
                 row_count=len(table_df),
             )
+
+    # v3.7.0 — upload each configured additionalAttributes staging view
+    # as its own two-column ``(code, name)`` CSV so the reporting model's
+    # UX_App / UX_Page / CW_Integration / Action / Process / Role /
+    # Target_User list imports have data to consume.
+    _upload_staging_views(client, settings, db_path, log)
 
     # --- Run the stitching process ---
     # Build id -> name lookup so nested-result log entries resolve to

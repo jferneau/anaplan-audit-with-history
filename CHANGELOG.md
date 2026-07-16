@@ -5,6 +5,52 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.7.0] — 2026-07-16 — additionalAttributes staging-view CSV uploads
+
+Closes the last known gap in the v3.3.0 additionalAttributes work: the
+seven staging views (``v_ux_app``, ``v_ux_page``, ``v_cw_integration``,
+``v_action``, ``v_process``, ``v_role``, ``v_target_user``) have
+existed in SQLite since v3.3.0 but were never pushed to Anaplan file
+sources. Now each one uploads as a two-column ``(code, name)`` CSV
+alongside the existing metadata uploads.
+
+### Added
+
+- **Seven new file-name settings** under ``TargetModelObjects``:
+  ``uxAppListFileName``, ``uxPageListFileName``,
+  ``cwIntegrationListFileName``, ``actionListFileName``,
+  ``processListFileName``, ``roleListFileName``,
+  ``targetUserListFileName``. All default to ``""`` (opt-out) — set
+  each to the file source name in your reporting model to enable.
+- **``_upload_staging_views``** helper called from ``_upload_via_process``
+  between the metadata CSV loop and the process run. Iterates
+  ``_STAGING_VIEW_UPLOADS``, skips any view whose (a) file-name is
+  blank, (b) owning category has ``emitLists=false``, or (c) file
+  source doesn't exist in the reporting model. Missing views in
+  SQLite degrade to an empty CSV so a reporting-model import can
+  clear its list cleanly.
+- **``TestStagingViewUploadsWiring`` + ``TestUploadStagingViews``** —
+  9 regression tests pinning: contract (every view + category
+  declared), opt-out semantics (blank filename), top-level enabled
+  gate, per-category ``emitLists`` gate, CSV contents, missing file
+  source, missing view.
+
+### Anaplan-side
+
+For each list you want populated, add on the reporting model:
+1. A flat list (e.g. ``UX_App``) with code + display columns.
+2. A file source matching your ``xxListFileName`` setting (e.g.
+   ``v_ux_app.csv``).
+3. An import action loading the file source into the list.
+4. Add the import to your master process, ordered *before* any
+   module import that references the new list.
+
+Set the corresponding ``xxListFileName`` field to the file source
+name and toggle ``additionalAttributes.categories.<cat>.emitLists =
+true`` in ``settings.json``. Next run populates.
+
+---
+
 ## [3.6.0] — 2026-07-16 — CloudWorks blueprint expansion
 
 ### Added
