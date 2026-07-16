@@ -438,6 +438,7 @@ CREATE TABLE IF NOT EXISTS model_history_normalized (
     data_types          TEXT,
     table_name          TEXT,
     object              TEXT,
+    target_user         TEXT,
     captured_at         TEXT NOT NULL,
     FOREIGN KEY (model_id) REFERENCES model_registry(model_id)
 )
@@ -451,6 +452,10 @@ _NORMALIZED_MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("data_types", "TEXT"),
     ("table_name", "TEXT"),
     ("anaplan_record_id", "TEXT"),
+    # v3.4.0 — role-change events attribute the affected user via a
+    # "Target User" column in the Anaplan export CSV. Previously the
+    # normalizer logged this as unmapped and dropped it.
+    ("target_user", "TEXT"),
 ]
 
 # Indexes on the columns most commonly filtered/joined in analytics queries.
@@ -572,6 +577,7 @@ def upsert_model_history(
                 "data_types",
                 "table_name",
                 "object",
+                "target_user",
                 "captured_at",
             ]
             norm_rows = [

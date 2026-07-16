@@ -5,6 +5,35 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.4.0] — 2026-07-16 — Model History picks up `Target User` column
+
+### Added
+
+- **`model_history_normalized.target_user`** column. Anaplan's model
+  history CSV export carries a `Target User` column on role-change
+  events (the user whose access was modified); previously the
+  normalizer logged it as an unmapped header and dropped the value
+  entirely. Now stored on the normalized table so reporting-model
+  drilldowns for security changes can show who was affected.
+- `_COLUMN_MAP` entry for the `target user` / `targetuser` header
+  patterns (case-insensitive, matches the pattern every other dynamic
+  header in this module uses).
+- Idempotent schema migration adds `target_user TEXT` to
+  `model_history_normalized` on existing databases via
+  `ALTER TABLE ADD COLUMN`.
+- **`TestTargetUserColumnRestoration`** — 4 regression tests covering
+  the header-matching, empty-fallback, casing variance, and upsert
+  persistence paths.
+
+### Notes
+
+- Anaplan-side follow-up (documentation only): add a `Target User` text
+  line item to the `Model History Detail` module so it consumes the
+  new CSV column. The `MODEL_HISTORY_NORMALIZED.csv` upload path will
+  otherwise ignore it.
+
+---
+
 ## [3.3.4] — 2026-07-16 — Drop `currentSize` and `lastServerRestartDate` from Model
 
 ### Removed

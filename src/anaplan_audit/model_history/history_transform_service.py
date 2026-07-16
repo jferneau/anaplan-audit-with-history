@@ -55,6 +55,7 @@ NORMALIZED_COLUMNS: list[str] = [
     "data_types",
     "table_name",
     "object",
+    "target_user",
     "captured_at",
 ]
 
@@ -75,6 +76,11 @@ _COLUMN_MAP: dict[str, list[str]] = {
     "data_types": ["data types", "data type"],
     "table_name": ["table name"],
     "object": ["object"],
+    # v3.4.0 — role-change events carry a "Target User" column identifying
+    # the user whose access was modified. Previously logged as unmapped
+    # and dropped; now stored on model_history_normalized so the
+    # reporting model can show attribution for security changes.
+    "target_user": ["target user", "targetuser"],
 }
 
 
