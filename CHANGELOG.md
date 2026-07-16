@@ -5,6 +5,33 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.3] — 2026-07-16 — `lastModified` / `lastServerRestartDate` are ISO strings, not epoch ms
+
+### Fixed
+
+- **``Model.lastModified`` and ``Model.lastServerRestartDate`` typed
+  as ``StrCoerce``** instead of ``int``. The real Anaplan Integration
+  API returns both as ISO 8601 text (e.g.
+  ``"2026-07-06T20:02:34.000+0000"``); v3.3.2 typed them as ``int = 0``
+  because the model-export-restoration spec's Section 3.1 labelled them
+  "Epoch ms", and a first live-tenant run crashed on
+  ``ValidationError: Input should be a valid integer, unable to parse
+  string as an integer``.
+- The reporting model's ``SYS Models`` module already expects text
+  (staging line items + ``LEFT(<field>, 19)`` display formulas), so
+  ``str`` is also the correct downstream shape. ``StrCoerce`` (which
+  the codebase already uses for other loose-typed API fields) still
+  accepts the epoch-millisecond integer variant some older responses
+  returned, so a tenant on either shape lands cleanly.
+
+### Added
+
+- **``TestModelDateFieldsAcceptIsoStrings``** (4 tests) pins the
+  ISO-string acceptance, the integer-coercion fallback, and the
+  empty-string default for both fields at the Pydantic layer.
+
+---
+
 ## [3.3.2] — 2026-07-16 — Rename `lastModifiedDate` → `lastModified`
 
 ### Fixed

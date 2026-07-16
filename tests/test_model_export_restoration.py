@@ -159,8 +159,8 @@ def _seed_models_users_workspaces(db_path: Path) -> None:
                 "lastModifiedByUserGuid": "usr-alice",
                 "memoryUsage": 123456789,
                 "currentSize": 987654321,
-                "lastServerRestartDate": 1_700_000_000_000,
-                "lastModified": 1_700_050_000_000,
+                "lastServerRestartDate": "2024-11-14T22:13:20.000+0000",
+                "lastModified": "2024-11-15T12:06:40.000+0000",
                 "workspaceId": "ws-1",
             },
             {
@@ -178,8 +178,8 @@ def _seed_models_users_workspaces(db_path: Path) -> None:
                 "lastModifiedByUserGuid": "usr-unknown",
                 "memoryUsage": 111,
                 "currentSize": 222,
-                "lastServerRestartDate": 1_700_000_000_000,
-                "lastModified": 1_700_050_000_000,
+                "lastServerRestartDate": "2024-11-14T22:13:20.000+0000",
+                "lastModified": "2024-11-15T12:06:40.000+0000",
                 "workspaceId": "ws-1",
             },
         ]
@@ -355,3 +355,55 @@ class TestLastModifiedContractWithReportingModel:
         header = df.to_csv(index=False).splitlines()[0].split(",")
         assert "lastModified" in header
         assert "lastModifiedDate" not in header
+
+
+class TestModelDateFieldsAcceptIsoStrings:
+    """v3.3.3 regression — the real Anaplan API returns ``lastModified``
+    and ``lastServerRestartDate`` as ISO 8601 text
+    (``"2026-07-06T20:02:34.000+0000"``), not the epoch-millisecond
+    integers the model-export-restoration spec's Section 3.1 assumed.
+    v3.3.2 typed both as ``int``, which raised a ``ValidationError`` on
+    a first live-tenant run. These tests pin the accepted shape at the
+    Pydantic layer.
+    """
+
+    def test_iso_string_last_modified_parses_cleanly(self) -> None:
+        m = Model.model_validate(
+            {
+                "id": "mod-x",
+                "name": "M",
+                "lastModified": "2026-07-06T20:02:34.000+0000",
+            }
+        )
+        assert m.lastModified == "2026-07-06T20:02:34.000+0000"
+
+    def test_iso_string_last_server_restart_date_parses_cleanly(self) -> None:
+        m = Model.model_validate(
+            {
+                "id": "mod-x",
+                "name": "M",
+                "lastServerRestartDate": "2026-06-01T02:00:00.000+0000",
+            }
+        )
+        assert m.lastServerRestartDate == "2026-06-01T02:00:00.000+0000"
+
+    def test_epoch_ms_integer_still_accepted_and_coerced_to_str(self) -> None:
+        # Some older API responses returned epoch-millisecond integers.
+        # StrCoerce coerces to str so a tenant on either shape still lands.
+        m = Model.model_validate(
+            {
+                "id": "mod-x",
+                "name": "M",
+                "lastModified": 1_700_050_000_000,
+                "lastServerRestartDate": 1_700_000_000_000,
+            }
+        )
+        assert m.lastModified == "1700050000000"
+        assert m.lastServerRestartDate == "1700000000000"
+
+    def test_default_is_empty_string_not_zero(self) -> None:
+        # A model whose response omits these fields lands with empty
+        # strings — not the misleading ``0`` epoch value.
+        m = Model.model_validate({"id": "mod-x", "name": "M"})
+        assert m.lastModified == ""
+        assert m.lastServerRestartDate == ""

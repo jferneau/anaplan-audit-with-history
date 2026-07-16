@@ -115,10 +115,16 @@ class Model(BaseModel):
     single exception of ``categoryValues`` which the orchestrator drops
     explicitly, matching Quinn's v1 (see spec Section 2).
 
-    Numeric fields default to ``0`` rather than ``None`` so
-    :func:`pandas.DataFrame` / :func:`to_sql` infers ``INTEGER`` rather
-    than an object column — matters for the ``Number``-formatted
-    Anaplan line items (``memoryUsage``, ``lastModified``, …).
+    Numeric byte-count fields (``memoryUsage``, ``currentSize``) and the
+    integer serial number default to ``0`` so pandas / to_sql infers
+    ``INTEGER``. Date-shaped fields (``isoCreationDate``, ``lastModified``,
+    ``lastServerRestartDate``) use :data:`StrCoerce` because Anaplan
+    returns them as ISO 8601 strings (e.g.
+    ``"2026-07-06T20:02:34.000+0000"``), and the reporting model's
+    ``SYS Models`` staging line items also expect text (formulas do
+    ``LEFT(<field>, 19)`` to trim to the display form). ``StrCoerce``
+    additionally tolerates the epoch-millisecond form some older API
+    responses returned, so a tenant on either shape lands cleanly.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -134,16 +140,13 @@ class Model(BaseModel):
     lastModifiedByUserGuid: str = ""
     memoryUsage: int = 0
     currentSize: int = 0
-    lastServerRestartDate: int = 0
-    lastModified: int = 0
-    """Epoch milliseconds of the model's last modification.
-
-    Named ``lastModified`` (not ``lastModifiedDate``) to match the
-    field name the Anaplan Integration API actually returns from
-    ``GET /workspaces/{ws}/models?modelDetails=true`` — which is
-    also the source-column name the reporting model's
-    ``SYS Models > lastModified`` staging line item expects.
-    """
+    lastServerRestartDate: StrCoerce = ""
+    lastModified: StrCoerce = ""
+    """Anaplan's last-modification timestamp. Returned as ISO 8601 text
+    (``"YYYY-MM-DDTHH:MM:SS.mmm+ZZZZ"``); the reporting model's
+    ``SYS Models > lastModified`` staging line item and its
+    ``Last Modified Date`` formula (``LEFT(lastModified, 19)``) expect
+    text under this exact column name."""
 
 
 class Action(BaseModel):
