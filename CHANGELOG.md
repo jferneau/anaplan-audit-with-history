@@ -5,6 +5,33 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.7.1] — 2026-07-16 — CloudWorks loose-type coercion
+
+### Fixed
+
+- **``CloudWorksIntegration`` fields typed as ``StrCoerce``** instead
+  of ``str``. Live-tenant run crashed with three validation errors on
+  ``modifiedBy=None`` (never edited), ``latestRun.success=True``
+  (bool), and ``latestRun.executionErrorCode=12`` (int). The CloudWorks
+  API is loosely typed — same pattern that hit ``Model.lastModified``
+  in v3.3.3. ``StrCoerce`` (already used elsewhere in this codebase)
+  coerces null / bool / int to strings at validation time so no
+  field raises mid-fetch.
+- **``latestRun`` / ``schedule`` typed as ``dict[str, Any]``** instead
+  of ``dict[str, str]``. Values inside these nested dicts are a mix of
+  str / int / bool / None; pandas normalizes them to native Python
+  types, and ``to_csv`` renders each as its string form. The property-
+  based ``Import into SYS Cloudworks`` consumes the resulting text
+  columns without complaint.
+
+### Added
+
+- **``TestCloudWorksAcceptsLooselyTypedApiResponses``** — 3
+  regression tests pinning acceptance of the exact input shapes that
+  crashed the live tenant.
+
+---
+
 ## [3.7.0] — 2026-07-16 — additionalAttributes staging-view CSV uploads
 
 Closes the last known gap in the v3.3.0 additionalAttributes work: the
