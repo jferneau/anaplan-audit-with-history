@@ -166,6 +166,20 @@ class TargetModelObjects(BaseModel):
     """Line-item name in the refresh log module that receives the count
     of audit rows loaded on this run (as an integer)."""
 
+    # --- additionalAttributes staging-view CSV uploads (v3.7.0) --------
+    # Each view is emitted as a two-column ``(code, name)`` CSV and
+    # uploaded to the named Anaplan file source, ready for a list
+    # import. Leave any file-name blank to skip that view — belt with
+    # the ``additionalAttributes.categories.<X>.emitLists`` setting,
+    # which also determines whether the view is materialised at all.
+    uxAppListFileName: str = ""
+    uxPageListFileName: str = ""
+    cwIntegrationListFileName: str = ""
+    actionListFileName: str = ""
+    processListFileName: str = ""
+    roleListFileName: str = ""
+    targetUserListFileName: str = ""
+
     # --- List sync via Transactional API --------------------------------
     syncLists: list[ListSyncEntry] = []
     """Lists whose codes should be kept current with what this run
