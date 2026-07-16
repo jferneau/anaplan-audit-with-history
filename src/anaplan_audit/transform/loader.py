@@ -241,7 +241,7 @@ SELECT
     m.memoryUsage,
     m.currentSize,
     m.lastServerRestartDate,
-    m.lastModifiedDate
+    m.lastModified
 FROM models m
 LEFT JOIN users u ON m.lastModifiedByUserGuid = u.id
 """

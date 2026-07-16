@@ -5,6 +5,30 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.2] — 2026-07-16 — Rename `lastModifiedDate` → `lastModified`
+
+### Fixed
+
+- **``Model`` Pydantic class field renamed** from ``lastModifiedDate``
+  to ``lastModified``. The v3.3.1 spec used the ``…Date`` suffix, but
+  Anaplan's ``GET /workspaces/{ws}/models?modelDetails=true`` actually
+  returns the field as ``lastModified`` — and the OEG reporting model's
+  ``SYS Models > lastModified`` staging line item expects the CSV
+  column under that exact name. The old naming meant the column landed
+  unmapped and the ``Last Modified Date`` formula (which reads
+  ``LEFT(lastModified, 19)``) had nothing to work with.
+- **``v_models_export`` view updated** to select ``m.lastModified``
+  instead of ``m.lastModifiedDate`` so the resulting CSV header
+  matches the reporting model's expectation.
+
+### Added
+
+- **Three regression tests** in ``TestLastModifiedContractWithReportingModel``
+  pin the ``lastModified`` column name at the Pydantic, view, and CSV
+  layers so a future rename in either direction breaks CI immediately.
+
+---
+
 ## [3.3.1] — 2026-07-16 — Restore model / user / workspace export fidelity
 
 Restores parity with Quinn Eddy's original v1 export path (`qkeddy/anaplan-audit-history`) so ``lastServerRestartDate``, ``lastModifiedByUserGuid``, ``memoryUsage``, and the rest of the detail fields reach the Anaplan Tenant Detail > Models module. Adds a joined view so the raw GUID resolves to email + display name for the ``Last Modified By`` line item.

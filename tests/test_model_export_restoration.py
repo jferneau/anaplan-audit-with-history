@@ -52,7 +52,7 @@ _SECTION_3_1_MODEL_COLUMNS = {
     "memoryUsage",
     "currentSize",
     "lastServerRestartDate",
-    "lastModifiedDate",
+    "lastModified",
 }
 
 # The two extras the export view produces on top of Section 3.1 raw cols.
@@ -160,7 +160,7 @@ def _seed_models_users_workspaces(db_path: Path) -> None:
                 "memoryUsage": 123456789,
                 "currentSize": 987654321,
                 "lastServerRestartDate": 1_700_000_000_000,
-                "lastModifiedDate": 1_700_050_000_000,
+                "lastModified": 1_700_050_000_000,
                 "workspaceId": "ws-1",
             },
             {
@@ -179,7 +179,7 @@ def _seed_models_users_workspaces(db_path: Path) -> None:
                 "memoryUsage": 111,
                 "currentSize": 222,
                 "lastServerRestartDate": 1_700_000_000_000,
-                "lastModifiedDate": 1_700_050_000_000,
+                "lastModified": 1_700_050_000_000,
                 "workspaceId": "ws-1",
             },
         ]
@@ -319,3 +319,39 @@ class TestCsvHeaderHasEveryColumn:
         assert "lastModifiedByDisplayName" in csv_header
         # And every Section 3.1 column too.
         assert _SECTION_3_1_MODEL_COLUMNS.issubset(csv_header)
+
+
+class TestLastModifiedContractWithReportingModel:
+    """v3.3.2 — the CSV column name must be ``lastModified``, not
+    ``lastModifiedDate``.
+
+    The reporting model's ``SYS Models`` module (applies-to: MOD_CT) has
+    a staging line item literally named ``lastModified``, and its
+    ``Last Modified Date`` formula reads it as ``LEFT(lastModified, 19)``.
+    A column called ``lastModifiedDate`` in ``MODEL_LIST.csv`` would land
+    unmapped and the module cell would stay blank. This test guards the
+    contract at three layers so a rename in either direction breaks CI
+    immediately.
+    """
+
+    def test_pydantic_declares_last_modified_not_last_modified_date(self) -> None:
+        assert "lastModified" in Model.model_fields
+        assert "lastModifiedDate" not in Model.model_fields
+
+    def test_v_models_export_view_selects_last_modified(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _seed_models_users_workspaces(db_path)
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            cur = conn.execute("SELECT * FROM v_models_export LIMIT 0")
+            view_cols = {desc[0] for desc in cur.description}
+        assert "lastModified" in view_cols
+        assert "lastModifiedDate" not in view_cols
+
+    def test_csv_header_carries_last_modified_column_name(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _seed_models_users_workspaces(db_path)
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            df = pd.read_sql_query("SELECT * FROM v_models_export", conn)
+        header = df.to_csv(index=False).splitlines()[0].split(",")
+        assert "lastModified" in header
+        assert "lastModifiedDate" not in header
