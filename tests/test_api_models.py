@@ -68,25 +68,43 @@ class TestAuditEvent:
 
 
 class TestUserModel:
-    """Tests for User model."""
+    """Tests for User model — Quinn's intentional 3-field narrow (v3.3.1)."""
 
     def test_defaults(self) -> None:
         """User model has sensible defaults."""
         user = User()
-        assert user.active is True
         assert user.id == ""
+        assert user.userName == ""
+        assert user.displayName == ""
 
-    def test_parse(self) -> None:
-        """User model parses SCIM response payload."""
+    def test_parse_drops_extras(self) -> None:
+        """User model parses SCIM response and drops every extra key.
+
+        v3.3.1 restored Quinn's v1 3-field narrow. ``extra="ignore"`` on
+        the model config guarantees SCIM's ``schemas`` / ``meta`` /
+        ``emails`` / ``active`` / etc. never reach the DataFrame or
+        the ``users`` SQLite table.
+        """
         user = User.model_validate(
             {
                 "id": "user-001",
                 "userName": "alice@test.com",
                 "displayName": "Alice",
+                # Every one of these must be dropped by extra="ignore".
                 "active": True,
+                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                "meta": {"resourceType": "User"},
+                "emails": [{"value": "alice@test.com"}],
+                "entitlements": [],
             }
         )
         assert user.userName == "alice@test.com"
+        assert user.displayName == "Alice"
+        # Every extra key must be absent — model_extra is None when
+        # ``extra="ignore"`` because Pydantic strips them at validation.
+        assert user.model_extra is None or user.model_extra == {}
+        dumped = user.model_dump()
+        assert set(dumped.keys()) == {"id", "userName", "displayName"}
 
 
 class TestWorkspaceModel:

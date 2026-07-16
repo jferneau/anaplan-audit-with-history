@@ -509,6 +509,13 @@ def _fetch_metadata(
             # report, so keep every model in the workspace's lookup tables.
             model_names[m.id] = m.name
             m_dict = m.model_dump()
+            # Quinn's v1 (anaplan_ops.py) drops exactly this column and
+            # keeps every other detail field. categoryValues is a nested
+            # dict Anaplan uses internally for the model-hub UI; it has
+            # no downstream Anaplan Reporting Model consumer and would
+            # otherwise land as an unreadable json-serialised blob in
+            # MODEL_LIST.csv. Deliberate parity with Quinn per spec Section 2.
+            m_dict.pop("categoryValues", None)
             m_dict["workspaceId"] = ws_id
             all_models.append(m_dict)
 

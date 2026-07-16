@@ -52,6 +52,14 @@ def list_models(
 ) -> list[Model]:
     """List all models in a workspace.
 
+    ``?modelDetails=true`` is always sent so the response carries the
+    ``lastModifiedByUserGuid`` / ``memoryUsage`` / ``lastServerRestartDate``
+    / ``lastSavedSerialNumber`` / ``isoCreationDate`` / ``lastModifiedDate``
+    fields the reporting model's Tenant Detail > Models module needs
+    (spec Section 3.1). Without the flag Anaplan returns a minimal
+    projection and every one of those columns lands blank downstream —
+    the exact regression the model-export-restoration spec targets.
+
     Args:
         client: An authenticated :class:`APIClient`.
         integration_uri: Base URI for the Integration API.
@@ -60,7 +68,10 @@ def list_models(
     Returns:
         A list of :class:`Model` instances.
     """
-    resp = client.get(f"{integration_uri}/workspaces/{workspace_id}/models")
+    resp = client.get(
+        f"{integration_uri}/workspaces/{workspace_id}/models",
+        params={"modelDetails": "true"},
+    )
     data = resp.json()
     return [Model.model_validate(m) for m in data.get("models", [])]
 
