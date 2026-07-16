@@ -5,6 +5,47 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.1] — 2026-07-16 — Restore model / user / workspace export fidelity
+
+Restores parity with Quinn Eddy's original v1 export path (`qkeddy/anaplan-audit-history`) so ``lastServerRestartDate``, ``lastModifiedByUserGuid``, ``memoryUsage``, and the rest of the detail fields reach the Anaplan Tenant Detail > Models module. Adds a joined view so the raw GUID resolves to email + display name for the ``Last Modified By`` line item.
+
+### Fixed
+
+- **``list_models`` now sends ``?modelDetails=true``.** Without the
+  flag Anaplan returns the minimal projection (``id``, ``name``,
+  ``activeState``, ``currentWorkspaceId``, ``currentWorkspaceName``,
+  ``modelUrl``, ``categoryValues``) and every detail column landed
+  blank downstream. Restored the flag Quinn's v1 relied on.
+- **``Model`` Pydantic class now declares every spec Section 3.1
+  column** (``isoCreationDate``, ``lastSavedSerialNumber``,
+  ``lastModifiedByUserGuid``, ``memoryUsage``, ``currentSize``,
+  ``lastServerRestartDate``, ``lastModifiedDate``) so
+  ``_metadata_frame`` guarantees the columns exist on a zero-row
+  result set and numeric columns land as ``INTEGER`` — not object.
+- **``categoryValues`` is now dropped in the transform**, matching
+  Quinn's v1 ``df.drop(columns=['categoryValues'])``. Previously it
+  sneaked through via ``extra="allow"`` and landed as a serialised
+  blob in ``MODEL_LIST.csv``.
+- **``User`` narrowed back to Quinn's intentional three-field set**
+  (``id``, ``userName``, ``displayName``). ``extra="ignore"`` drops
+  SCIM's ``schemas`` / ``meta`` / ``emails`` / ``entitlements`` /
+  ``active`` / ``name`` at validation time so ``USER_LIST.csv``
+  ships the three columns the reporting model expects.
+
+### Added
+
+- **New ``v_models_export`` view** (spec Section 4) resolves
+  ``lastModifiedByUserGuid`` against the ``users`` table with a
+  ``LEFT JOIN`` — models with an unknown or deactivated user GUID
+  still export (with null ``lastModifiedByEmail`` /
+  ``lastModifiedByDisplayName``), never dropped.
+- **Metadata upload path now routes ``models`` through the view.**
+  ``_TABLE_TO_SOURCE = {"models": "v_models_export"}`` — every other
+  table still exports from its raw counterpart. ``MOD_CT`` counter
+  and file mapping continue keying off the logical name.
+
+---
+
 ## [3.3.0] — 2026-07-16 — `additionalAttributes` extractor + staging views + backfill
 
 Restores the UX / integration / action / process / role / target-user

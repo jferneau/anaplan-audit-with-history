@@ -67,14 +67,24 @@ class AuditEvent(BaseModel):
 
 
 class User(BaseModel):
-    """An Anaplan user from the SCIM API."""
+    """An Anaplan user from the SCIM API — intentionally narrow.
 
-    model_config = ConfigDict(extra="allow")
+    Quinn's v1 pins users to exactly ``id / userName / displayName`` because
+    the target ``USER_LIST.csv`` in the reporting model only expects those
+    three. SCIM returns much more (``schemas``, ``meta``, ``name``,
+    ``emails``, ``entitlements``, ``active``, …); ``extra="ignore"`` drops
+    every unknown key at validation time so the DataFrame — and every
+    downstream CSV / view — stays at three columns.
+
+    Do not add fields here without a documented downstream requirement
+    (spec Section 3.2 "Do not modify" list).
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     id: str = ""
     userName: str = ""
     displayName: str = ""
-    active: bool = True
 
 
 class Workspace(BaseModel):
@@ -95,13 +105,37 @@ class Workspace(BaseModel):
 
 
 class Model(BaseModel):
-    """An Anaplan model from the Integration API."""
+    """An Anaplan model from the Integration API (``?modelDetails=true``).
+
+    Every field the reporting model's Tenant Detail > Models module
+    consumes is declared here so that :func:`_metadata_frame` (which
+    reads ``model_fields``) always guarantees the column exists on a
+    zero-row result set. ``extra="allow"`` remains so any new detail
+    field Anaplan adds flows through without a code change — with the
+    single exception of ``categoryValues`` which the orchestrator drops
+    explicitly, matching Quinn's v1 (see spec Section 2).
+
+    Numeric fields default to ``0`` rather than ``None`` so
+    :func:`pandas.DataFrame` / :func:`to_sql` infers ``INTEGER`` rather
+    than an object column — matters for the ``Number``-formatted
+    Anaplan line items (``memoryUsage``, ``lastModifiedDate``, …).
+    """
 
     model_config = ConfigDict(extra="allow")
 
     id: str = ""
     name: str = ""
     activeState: str = ""
+    currentWorkspaceId: str = ""
+    currentWorkspaceName: str = ""
+    modelUrl: str = ""
+    isoCreationDate: str = ""
+    lastSavedSerialNumber: int = 0
+    lastModifiedByUserGuid: str = ""
+    memoryUsage: int = 0
+    currentSize: int = 0
+    lastServerRestartDate: int = 0
+    lastModifiedDate: int = 0
 
 
 class Action(BaseModel):

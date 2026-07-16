@@ -145,6 +145,11 @@ def load_to_sqlite(db_path: Path, datasets: dict[str, pd.DataFrame]) -> None:
                     table=table_name,
                     row_count=len(df),
                 )
+            # Refresh the export view after every load so its column
+            # list stays in sync with the current models / users schema
+            # (spec Milestone 3). Idempotent, and creates cleanly even
+            # if either underlying table is empty on this run.
+            _ensure_models_export_view(conn)
     except SQLiteLoadError:
         raise
     except Exception as exc:
@@ -212,6 +217,53 @@ def _upsert_events(conn: sqlite3.Connection, df: pd.DataFrame) -> None:
     rows = [tuple(row) for row in df.itertuples(index=False)]
     conn.executemany(sql, rows)
     conn.commit()
+
+
+# SQL for the export view that resolves ``lastModifiedByUserGuid`` to
+# the user's email and display name (spec Section 4). The column list
+# is stable per spec Section 3.1 — new columns Anaplan adds land on the
+# ``models`` table via ``to_sql(if_exists="replace")`` and can be added
+# here in a follow-up if the reporting model needs them.
+_MODELS_EXPORT_VIEW_SQL = """
+CREATE VIEW IF NOT EXISTS v_models_export AS
+SELECT
+    m.id,
+    m.name,
+    m.activeState,
+    m.currentWorkspaceId,
+    m.currentWorkspaceName,
+    m.modelUrl,
+    m.isoCreationDate,
+    m.lastSavedSerialNumber,
+    m.lastModifiedByUserGuid,
+    u.userName    AS lastModifiedByEmail,
+    u.displayName AS lastModifiedByDisplayName,
+    m.memoryUsage,
+    m.currentSize,
+    m.lastServerRestartDate,
+    m.lastModifiedDate
+FROM models m
+LEFT JOIN users u ON m.lastModifiedByUserGuid = u.id
+"""
+
+
+def _ensure_models_export_view(conn: sqlite3.Connection) -> None:
+    """(Re)create ``v_models_export`` so it matches the current schema.
+
+    ``DROP VIEW IF EXISTS`` before ``CREATE`` because a prior release
+    (pre-v3.3.1) or a schema change on either underlying table would
+    otherwise leave a stale view definition around — SQLite's
+    ``CREATE VIEW IF NOT EXISTS`` is a no-op when a definition already
+    exists, even if it references removed columns. Drop-then-create is
+    idempotent and cheap.
+
+    LEFT JOIN (not INNER) — spec Section 4: a model with an unknown
+    ``lastModifiedByUserGuid`` (e.g. a deactivated user, a service
+    account not in SCIM) must still export, with null email columns.
+    """
+    conn.execute("DROP VIEW IF EXISTS v_models_export")
+    conn.execute(_MODELS_EXPORT_VIEW_SQL)
+    logger.debug("models_export_view_ensured")
 
 
 def _ensure_event_columns(
