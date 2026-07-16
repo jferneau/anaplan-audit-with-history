@@ -104,6 +104,16 @@ _TABLE_TO_COUNTER_COLUMN: dict[str, str] = {
     "cloudworks": "CW_CT",
 }
 
+# Logical table name -> actual source query for the export CSV. Populated
+# only for tables whose export goes through a join view rather than the
+# raw table. Spec Section 4: ``models`` -> ``v_models_export`` so the
+# CSV carries ``lastModifiedByEmail`` / ``lastModifiedByDisplayName``
+# alongside the raw GUID. Counter map, file map, and filenames all still
+# key off the logical name.
+_TABLE_TO_SOURCE: dict[str, str] = {
+    "models": "v_models_export",
+}
+
 
 def _prepare_metadata_csv(table_name: str, table_df: pd.DataFrame) -> pd.DataFrame:
     """Shape a metadata DataFrame for its Anaplan file source.
@@ -319,8 +329,9 @@ def _upload_via_process(
                 required=True,
                 log=log,
             )
+            source = _TABLE_TO_SOURCE.get(table_name, table_name)
             try:
-                table_df = pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
+                table_df = pd.read_sql_query(f'SELECT * FROM "{source}"', conn)
             except Exception as exc:
                 # A missing metadata table shouldn't fail the run — just
                 # push an empty CSV (headerless) so the model's import can
