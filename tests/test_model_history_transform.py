@@ -239,9 +239,72 @@ class TestModelHistorySQLite:
         assert "import_action" in cols
         assert "data_types" in cols
         assert "table_name" in cols
+        # v3.4.0 — Target User is picked up from role-change export rows.
+        assert "target_user" in cols
 
     def test_schema_migration_is_idempotent(self, db_path: Path) -> None:
         """Calling ensure_model_history_tables on a current-schema DB does not raise."""
         # db_path fixture already has the full schema from the first call.
         # A second call must be safe (duplicate column errors swallowed).
         ensure_model_history_tables(db_path)  # should not raise
+
+
+class TestTargetUserColumnRestoration:
+    """v3.4.0 — Anaplan's model history export carries a ``Target User``
+    column on role-change events (the user whose access was modified).
+    Previously the normalizer treated it as unknown, logged it as an
+    unmapped column, and dropped the value entirely. Now it lands on
+    ``model_history_normalized.target_user``.
+    """
+
+    @pytest.fixture()
+    def db_path(self, tmp_path: Path) -> Path:
+        path = tmp_path / "test_target_user.db"
+        ensure_model_history_tables(path)
+        return path
+
+    _ROLE_CHANGE_CSV = (
+        "Date/Time (UTC),User,Description,Previous Value,New Value,Target User\n"
+        "2025-08-01T09:30:00Z,admin@example.com,Role changed,Model Builder,"
+        "Workspace Admin,charlie@example.com\n"
+        "2025-08-01T09:45:00Z,admin@example.com,Role changed,Read Only,"
+        "Model Builder,dana@example.com\n"
+    )
+
+    def test_target_user_column_is_populated(self) -> None:
+        _reg, _lst, norm = normalize_model_history(
+            self._ROLE_CHANGE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        assert "target_user" in norm.columns
+        assert norm["target_user"].tolist() == ["charlie@example.com", "dana@example.com"]
+
+    def test_target_user_is_empty_when_not_present(self) -> None:
+        # Non-role-change exports have no Target User column — the field
+        # must be an empty string, not NaN or missing.
+        _reg, _lst, norm = normalize_model_history(
+            _SAMPLE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        assert "target_user" in norm.columns
+        assert (norm["target_user"] == "").all()
+
+    def test_target_user_matches_case_insensitively(self) -> None:
+        # Anaplan's header casing has varied over time. Match on lowercase
+        # substring "target user" (or "targetuser") like every other
+        # dynamic header pattern in _COLUMN_MAP.
+        csv = textwrap.dedent("""\
+            date_time_utc,user,description,TargetUser
+            2025-08-01T09:30:00Z,admin@example.com,Access granted,zoe@example.com
+        """)
+        _reg, _lst, norm = normalize_model_history(csv, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME)
+        assert norm["target_user"].tolist() == ["zoe@example.com"]
+
+    def test_target_user_persists_through_upsert(self, db_path: Path) -> None:
+        reg, lst, norm = normalize_model_history(
+            self._ROLE_CHANGE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        upsert_model_history(db_path, reg, lst, norm)
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            rows = list(
+                conn.execute("SELECT target_user FROM model_history_normalized ORDER BY user")
+            )
+        assert [r[0] for r in rows] == ["charlie@example.com", "dana@example.com"]
