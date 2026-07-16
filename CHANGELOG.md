@@ -5,6 +5,31 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.3.4] — 2026-07-16 — Drop `currentSize` and `lastServerRestartDate` from Model
+
+### Removed
+
+- **``Model.currentSize`` and ``Model.lastServerRestartDate``** — the
+  model-export-restoration spec listed both in Section 3.1, but Anaplan's
+  ``GET /workspaces/{ws}/models?modelDetails=true`` doesn't actually
+  return either for models. Verified against a 41-model live tenant:
+  41 of 41 landed null/zero. Ship the CSV without two dead columns.
+  Workspaces still expose ``currentSize`` via ``?tenantDetails=true``.
+  Models expose their size through ``memoryUsage`` (the correct field
+  for the model surface).
+- **``v_models_export`` view** no longer selects either column.
+- The ``SYS Models > currentSize`` / ``lastServerRestartDate`` /
+  ``Last Server Restart Date`` line items added in the v3.3.1 rollout
+  can be deleted from the reporting model — they can never populate.
+
+### Added
+
+- **``TestModelDeliberatelyOmitsSpecFictionFields``** (3 tests) pins
+  the omission at the Pydantic and view layers so a future
+  spec-driven attempt to re-add these fields breaks CI immediately.
+
+---
+
 ## [3.3.3] — 2026-07-16 — `lastModified` / `lastServerRestartDate` are ISO strings, not epoch ms
 
 ### Fixed

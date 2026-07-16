@@ -39,6 +39,10 @@ WS = "ws-1"
 
 
 # ----- Section 3.1 expected columns (spec canonical set) --------------
+# The set the reporting model actually consumes for models — spec
+# Section 3.1 also listed currentSize + lastServerRestartDate but the
+# Anaplan API never returns those for model endpoints (verified against
+# a 41-model live tenant; 41/41 landed null). Removed in v3.3.4.
 _SECTION_3_1_MODEL_COLUMNS = {
     "id",
     "name",
@@ -50,8 +54,6 @@ _SECTION_3_1_MODEL_COLUMNS = {
     "lastSavedSerialNumber",
     "lastModifiedByUserGuid",
     "memoryUsage",
-    "currentSize",
-    "lastServerRestartDate",
     "lastModified",
 }
 
@@ -158,8 +160,6 @@ def _seed_models_users_workspaces(db_path: Path) -> None:
                 "lastSavedSerialNumber": 42,
                 "lastModifiedByUserGuid": "usr-alice",
                 "memoryUsage": 123456789,
-                "currentSize": 987654321,
-                "lastServerRestartDate": "2024-11-14T22:13:20.000+0000",
                 "lastModified": "2024-11-15T12:06:40.000+0000",
                 "workspaceId": "ws-1",
             },
@@ -177,8 +177,6 @@ def _seed_models_users_workspaces(db_path: Path) -> None:
                 "lastSavedSerialNumber": 7,
                 "lastModifiedByUserGuid": "usr-unknown",
                 "memoryUsage": 111,
-                "currentSize": 222,
-                "lastServerRestartDate": "2024-11-14T22:13:20.000+0000",
                 "lastModified": "2024-11-15T12:06:40.000+0000",
                 "workspaceId": "ws-1",
             },
@@ -358,13 +356,12 @@ class TestLastModifiedContractWithReportingModel:
 
 
 class TestModelDateFieldsAcceptIsoStrings:
-    """v3.3.3 regression — the real Anaplan API returns ``lastModified``
-    and ``lastServerRestartDate`` as ISO 8601 text
-    (``"2026-07-06T20:02:34.000+0000"``), not the epoch-millisecond
-    integers the model-export-restoration spec's Section 3.1 assumed.
-    v3.3.2 typed both as ``int``, which raised a ``ValidationError`` on
-    a first live-tenant run. These tests pin the accepted shape at the
-    Pydantic layer.
+    """v3.3.3 — the real Anaplan API returns ``lastModified`` as ISO
+    8601 text (``"2026-07-06T20:02:34.000+0000"``), not the
+    epoch-millisecond integer the model-export-restoration spec's
+    Section 3.1 assumed. v3.3.2 typed it as ``int``, which raised a
+    ``ValidationError`` on a first live-tenant run. Pins the accepted
+    shape at the Pydantic layer.
     """
 
     def test_iso_string_last_modified_parses_cleanly(self) -> None:
@@ -377,16 +374,6 @@ class TestModelDateFieldsAcceptIsoStrings:
         )
         assert m.lastModified == "2026-07-06T20:02:34.000+0000"
 
-    def test_iso_string_last_server_restart_date_parses_cleanly(self) -> None:
-        m = Model.model_validate(
-            {
-                "id": "mod-x",
-                "name": "M",
-                "lastServerRestartDate": "2026-06-01T02:00:00.000+0000",
-            }
-        )
-        assert m.lastServerRestartDate == "2026-06-01T02:00:00.000+0000"
-
     def test_epoch_ms_integer_still_accepted_and_coerced_to_str(self) -> None:
         # Some older API responses returned epoch-millisecond integers.
         # StrCoerce coerces to str so a tenant on either shape still lands.
@@ -395,15 +382,37 @@ class TestModelDateFieldsAcceptIsoStrings:
                 "id": "mod-x",
                 "name": "M",
                 "lastModified": 1_700_050_000_000,
-                "lastServerRestartDate": 1_700_000_000_000,
             }
         )
         assert m.lastModified == "1700050000000"
-        assert m.lastServerRestartDate == "1700000000000"
 
-    def test_default_is_empty_string_not_zero(self) -> None:
-        # A model whose response omits these fields lands with empty
-        # strings — not the misleading ``0`` epoch value.
+    def test_default_last_modified_is_empty_string_not_zero(self) -> None:
+        # A model whose response omits the field lands with empty
+        # string — not the misleading ``0`` epoch value.
         m = Model.model_validate({"id": "mod-x", "name": "M"})
         assert m.lastModified == ""
-        assert m.lastServerRestartDate == ""
+
+
+class TestModelDeliberatelyOmitsSpecFictionFields:
+    """v3.3.4 — the model-export-restoration spec listed
+    ``currentSize`` and ``lastServerRestartDate`` as expected fields,
+    but Anaplan's ``?modelDetails=true`` endpoint doesn't return either
+    for models. Verified against a 41-model live tenant: 41/41 landed
+    null/zero. Ship them as undeclared columns to avoid two dead
+    columns in every MODEL_LIST.csv.
+    """
+
+    def test_current_size_is_not_a_declared_model_field(self) -> None:
+        assert "currentSize" not in Model.model_fields
+
+    def test_last_server_restart_date_is_not_a_declared_model_field(self) -> None:
+        assert "lastServerRestartDate" not in Model.model_fields
+
+    def test_view_does_not_select_dropped_columns(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "test.db"
+        _seed_models_users_workspaces(db_path)
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            cur = conn.execute("SELECT * FROM v_models_export LIMIT 0")
+            view_cols = {desc[0] for desc in cur.description}
+        assert "currentSize" not in view_cols
+        assert "lastServerRestartDate" not in view_cols

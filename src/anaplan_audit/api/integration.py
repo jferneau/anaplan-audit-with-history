@@ -53,12 +53,17 @@ def list_models(
     """List all models in a workspace.
 
     ``?modelDetails=true`` is always sent so the response carries the
-    ``lastModifiedByUserGuid`` / ``memoryUsage`` / ``lastServerRestartDate``
-    / ``lastSavedSerialNumber`` / ``isoCreationDate`` / ``lastModified``
-    fields the reporting model's Tenant Detail > Models module needs
-    (spec Section 3.1). Without the flag Anaplan returns a minimal
-    projection and every one of those columns lands blank downstream —
+    ``lastModifiedByUserGuid`` / ``memoryUsage`` / ``lastSavedSerialNumber``
+    / ``isoCreationDate`` / ``lastModified`` fields the reporting model's
+    ``SYS Models`` module consumes. Without the flag Anaplan returns a
+    minimal projection and every one of those columns lands blank —
     the exact regression the model-export-restoration spec targets.
+
+    Note that ``currentSize`` and ``lastServerRestartDate`` are listed
+    in the spec's Section 3.1 but Anaplan does *not* actually return
+    them for models even with ``modelDetails=true`` (workspaces have
+    ``currentSize``; models expose their size via ``memoryUsage``).
+    The :class:`Model` class deliberately omits both.
 
     Args:
         client: An authenticated :class:`APIClient`.
