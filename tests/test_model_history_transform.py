@@ -308,3 +308,157 @@ class TestTargetUserColumnRestoration:
                 conn.execute("SELECT target_user FROM model_history_normalized ORDER BY user")
             )
         assert [r[0] for r in rows] == ["charlie@example.com", "dana@example.com"]
+
+
+class TestV380ClassificationColumns:
+    """v3.8.0 — MODEL_HISTORY_NORMALIZED gains derived ``change_type`` and
+    ``object_type`` columns populated by
+    :mod:`anaplan_audit.model_history.classification`.
+
+    See ``MODEL_HISTORY_CLASSIFICATION_SCOPE.md`` for the full scope.
+    Enhancement-only: existing columns keep their name, order, and
+    semantics; the two new columns are appended at the end.
+    """
+
+    @pytest.fixture()
+    def db_path(self, tmp_path: Path) -> Path:
+        path = tmp_path / "test_classification.db"
+        ensure_model_history_tables(path)
+        return path
+
+    _CLASSIFIABLE_CSV = textwrap.dedent("""\
+        Date/Time (UTC),User,Description
+        2025-06-15T10:00:00Z,alice@example.com,Added line item Revenue to module P&L
+        2025-06-15T11:00:00Z,bob@example.com,Deleted module Archive
+        2025-06-15T12:00:00Z,carol@example.com,qwerty asdf nonsense event
+    """)
+
+    def test_new_columns_appear_at_end_of_normalized(self) -> None:
+        from anaplan_audit.model_history.history_transform_service import NORMALIZED_COLUMNS
+
+        # v3.8 contract: the two new columns are the last two entries so
+        # existing colleague queries and Anaplan property-based imports
+        # continue to see identical positions for prior columns.
+        assert NORMALIZED_COLUMNS[-2:] == ["change_type", "object_type"]
+
+    def test_existing_column_order_unchanged(self) -> None:
+        # Snapshot of the v3.7.1 columns in their v3.7.1 positions.
+        # If someone reorders these later, this test will catch it.
+        from anaplan_audit.model_history.history_transform_service import NORMALIZED_COLUMNS
+
+        v371_prefix = [
+            "record_id",
+            "anaplan_record_id",
+            "model_id",
+            "date_time_utc",
+            "user",
+            "description",
+            "security_change",
+            "previous_value",
+            "new_value",
+            "module_list",
+            "line_item_property",
+            "customer",
+            "export",
+            "import_action",
+            "data_types",
+            "table_name",
+            "object",
+            "target_user",
+            "captured_at",
+        ]
+        assert NORMALIZED_COLUMNS[: len(v371_prefix)] == v371_prefix
+
+    def test_classifiable_rows_populate_both_columns(self) -> None:
+        _reg, _lst, norm = normalize_model_history(
+            self._CLASSIFIABLE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        assert norm.iloc[0]["change_type"] == "Add Line Item"
+        assert norm.iloc[0]["object_type"] == "Line Item/Property"
+        assert norm.iloc[1]["change_type"] == "Delete Module"
+        assert norm.iloc[1]["object_type"] == "Module/List"
+
+    def test_unclassifiable_row_hits_catchall(self) -> None:
+        _reg, _lst, norm = normalize_model_history(
+            self._CLASSIFIABLE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        # Row 3 has a nonsense description → catchall.
+        assert norm.iloc[2]["change_type"] == "Model change (no details available)"
+        assert norm.iloc[2]["object_type"] == "Other"
+
+    def test_no_row_leaves_change_type_or_object_type_empty(self) -> None:
+        _reg, _lst, norm = normalize_model_history(
+            self._CLASSIFIABLE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        assert (norm["change_type"] != "").all()
+        assert (norm["object_type"] != "").all()
+
+    def test_columns_persist_through_upsert(self, db_path: Path) -> None:
+        reg, lst, norm = normalize_model_history(
+            self._CLASSIFIABLE_CSV, MODEL_ID, MODEL_NAME, WS_ID, WS_NAME
+        )
+        upsert_model_history(db_path, reg, lst, norm)
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            rows = list(
+                conn.execute(
+                    "SELECT change_type, object_type FROM model_history_normalized "
+                    "ORDER BY date_time_utc"
+                )
+            )
+        assert rows[0] == ("Add Line Item", "Line Item/Property")
+        assert rows[1] == ("Delete Module", "Module/List")
+        assert rows[2] == ("Model change (no details available)", "Other")
+
+    def test_ddl_creates_new_columns_on_fresh_db(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "fresh.db"
+        ensure_model_history_tables(db_path)
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(model_history_normalized)")}
+        assert "change_type" in cols
+        assert "object_type" in cols
+
+    def test_migration_adds_new_columns_to_legacy_db(self, tmp_path: Path) -> None:
+        """A v3.7-shaped DB (no change_type / object_type) gains them via
+        the ``_NORMALIZED_MIGRATION_COLUMNS`` ALTER path."""
+        db_path = tmp_path / "legacy37.db"
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            conn.execute("""
+                CREATE TABLE model_history_normalized (
+                    record_id           TEXT PRIMARY KEY,
+                    anaplan_record_id   TEXT,
+                    model_id            TEXT NOT NULL,
+                    date_time_utc       TEXT NOT NULL,
+                    user                TEXT,
+                    description         TEXT,
+                    security_change     TEXT,
+                    previous_value      TEXT,
+                    new_value           TEXT,
+                    module_list         TEXT,
+                    line_item_property  TEXT,
+                    customer            TEXT,
+                    export              TEXT,
+                    import_action       TEXT,
+                    data_types          TEXT,
+                    table_name          TEXT,
+                    object              TEXT,
+                    target_user         TEXT,
+                    captured_at         TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE model_registry (
+                    model_id       TEXT PRIMARY KEY,
+                    model_name     TEXT NOT NULL,
+                    workspace_id   TEXT NOT NULL,
+                    workspace_name TEXT NOT NULL,
+                    last_synced_at TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+
+        ensure_model_history_tables(db_path)
+
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(model_history_normalized)")}
+        assert "change_type" in cols
+        assert "object_type" in cols

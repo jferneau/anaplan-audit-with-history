@@ -5,6 +5,75 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [3.8.0] — 2026-07-17 — Model History change_type / object_type classification
+
+Adds two derived analytics dimensions to `MODEL_HISTORY_NORMALIZED.csv`
+by classifying Anaplan's free-text `description` column against a
+controlled vocabulary. Downstream reporting gains stable filters like
+"how many line item additions this quarter" without having to group by
+free text that shifts across Anaplan releases.
+
+See `MODEL_HISTORY_CLASSIFICATION_SCOPE.md` for the full design.
+
+### Added
+
+- **`src/anaplan_audit/model_history/classification.py`** — priority-
+  ordered regex classifier. First-match-wins; `Rule` dataclass; loader
+  validates every rule references a known vocabulary term (invalid
+  rows warn + skip, not crash); explicit catchall guarantees every
+  description resolves to `("Other", "Model change (no details
+  available)")` — never NULL.
+- **Bundled data files** via `importlib.resources`
+  (`src/anaplan_audit/model_history/data/`):
+  - `mh_object_types.csv` — the 12 controlled object types
+    (`Module/List`, `Line Item/Property`, `Customer`, `Export`,
+    `Dashboard`, `Action`, `Process`, `Version`, `Time Settings`,
+    `User`, `Role`, `Other`).
+  - `mh_change_types.csv` — the 50 controlled change types
+    (`Add Line Item`, `Delete Module`, `Bulk data change`, …).
+  - `mh_classification_rules.csv` — starter rule set (~40 patterns
+    plus the catchall). Colleagues extend without a code release —
+    add a row, PR, cut a patch.
+- **Two new columns on `MODEL_HISTORY_NORMALIZED.csv`**, appended at
+  the end: `change_type` and `object_type`. Existing columns keep
+  their name and position — colleague queries and Anaplan property-
+  based imports are unaffected.
+- **Two new columns on the SQLite `model_history_normalized` table**,
+  added to the DDL and migrated onto existing databases via the
+  established `_NORMALIZED_MIGRATION_COLUMNS` path.
+- **End-of-run unmatched summary** logged at INFO with the top 10
+  descriptions that hit the catchall, so colleagues have a ranked
+  working set to author rules against.
+- **`tests/test_mh_classification.py`** — priority order, vocabulary
+  validation, first-match-wins, catchall, invalid-regex handling,
+  starter coverage (25 real-shape descriptions), `UnmatchedSummary`
+  behavior.
+- **`TestV380ClassificationColumns`** in
+  `tests/test_model_history_transform.py` — pins the column positions,
+  the fresh-DDL path, the legacy-DB migration path, and end-to-end
+  populate-then-upsert-then-read round-trip.
+
+### Non-breaking
+
+- The two new columns are optional on the Anaplan side. Customers who
+  upgrade the tool but do not yet build the `MH_CHANGE_TYPES` /
+  `MH_OBJECT_TYPES` lists and the two new line items see zero
+  behavior change — their existing property-based import silently
+  drops the two unmapped columns.
+
+### Anaplan-side rollout (documented in the scope, addendum to
+`Anaplan_Audit_History/rollout-guide.html`)
+
+1. Create `MH_CHANGE_TYPES` general list, import 50 members.
+2. Create `MH_OBJECT_TYPES` general list, import 12 members.
+3. On Model History Detail module, add `change_type` (list-formatted
+   to `MH_CHANGE_TYPES`) and `object_type` (list-formatted to
+   `MH_OBJECT_TYPES`).
+4. Bind the two new source columns on the
+   `MODEL_HISTORY_NORMALIZED.csv` import to the two line items.
+
+---
+
 ## [3.7.1] — 2026-07-16 — CloudWorks loose-type coercion
 
 ### Fixed

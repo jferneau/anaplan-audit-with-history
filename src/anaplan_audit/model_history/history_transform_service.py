@@ -31,12 +31,33 @@ from datetime import UTC, datetime
 import pandas as pd
 import structlog
 
+from anaplan_audit.model_history import classification
+
 logger: structlog.stdlib.BoundLogger = structlog.get_logger()
+
+# Rules are loaded once per process and shared across all model runs.
+# Loading is idempotent but touches the filesystem via importlib.resources
+# so cache the result at module scope to keep normalize hot-path fast.
+_RULES_CACHE: list[classification.Rule] | None = None
+
+
+def _get_rules() -> list[classification.Rule]:
+    """Return process-wide cached classification rules."""
+    global _RULES_CACHE
+    if _RULES_CACHE is None:
+        _RULES_CACHE = classification.load_rules()
+    return _RULES_CACHE
+
 
 # Characters that Anaplan list items do not allow.
 _INVALID_CHARS: re.Pattern[str] = re.compile(r'[/\\:*?"<>|]')
 
 # Normalized column names for the output DataFrames.
+#
+# v3.8 appends ``change_type`` and ``object_type`` at the end. Existing
+# columns keep their name and order so consumers (SQLite queries,
+# Anaplan property-based imports, DBeaver views) are unaffected. See
+# ``MODEL_HISTORY_CLASSIFICATION_SCOPE.md`` §4.3.
 NORMALIZED_COLUMNS: list[str] = [
     "record_id",
     "anaplan_record_id",
@@ -57,6 +78,8 @@ NORMALIZED_COLUMNS: list[str] = [
     "object",
     "target_user",
     "captured_at",
+    "change_type",
+    "object_type",
 ]
 
 # Mapping from normalized column name to known dynamic header patterns.
@@ -280,6 +303,7 @@ def normalize_model_history(
 
     log.info("model_history_parse_start", columns=headers)
     assigned = _build_column_mapping(headers, log)
+    rules = _get_rules()
 
     # Pre-build an index from header name → column position for O(1) row access
     col_index: dict[str, int] = {h: i for i, h in enumerate(headers)}
@@ -287,6 +311,7 @@ def normalize_model_history(
     # Stream rows and build normalized output in one pass
     norm_rows: list[dict[str, str]] = []
     list_rows_raw: list[tuple[str, str, str]] = []
+    unmatched = classification.UnmatchedSummary()
 
     for row_idx, row_data in enumerate(reader):
         # Pad short rows (malformed CSV) rather than crashing
@@ -303,6 +328,15 @@ def normalize_model_history(
             col_pos = col_index.get(dyn_col)
             if col_pos is not None and col_pos < len(row_data):
                 norm[norm_col] = row_data[col_pos] or ""
+
+        # Classify the description into controlled vocabularies. First-match
+        # wins over priority-ordered rules; falls back to
+        # ("Other", "Model change (no details available)") via the catchall.
+        object_type, change_type = classification.classify(norm["description"], rules)
+        norm["object_type"] = object_type
+        norm["change_type"] = change_type
+        if change_type == "Model change (no details available)" and norm["description"]:
+            unmatched.record(norm["description"])
 
         # Generate a stable, unique record_id from content after norm is
         # populated.  row_idx distinguishes rows with identical content.
@@ -348,5 +382,13 @@ def normalize_model_history(
         normalized_rows=len(model_history_normalized_df),
         safe_model_name=safe_model_name,
     )
+
+    if unmatched.total:
+        log.info(
+            "mh_classification_unmatched_summary",
+            total=unmatched.total,
+            unique_patterns=len(unmatched.patterns),
+            top=unmatched.top(10),
+        )
 
     return model_registry_df, model_history_list_df, model_history_normalized_df

@@ -1,0 +1,50 @@
+priority,pattern,object_type,change_type
+10,^Added line item .+$,Line Item/Property,Add Line Item
+10,^Edit line item .+$,Line Item/Property,Edit Line Item
+10,^Edited line item .+$,Line Item/Property,Edit Line Item
+10,^Deleted line item .+$,Line Item/Property,Delete
+10,^Changed line item .+$,Line Item/Property,Change Line Item
+20,^Added module .+$,Module/List,Add Module
+20,^Deleted module .+$,Module/List,Delete Module
+15,^Added list item .+$,Module/List,Add List Item
+15,^Deleted list item .+$,Module/List,Delete
+20,^Added list .+$,Module/List,Add List
+20,^Deleted list .+$,Module/List,Delete List
+20,^Changed list .+$,Module/List,Change List
+40,^Added user .+$,User,Add User
+40,^Deleted user .+$,User,Delete User
+50,^Added process .+$,Process,Add Process
+50,^Changed process .+$,Process,Change Process
+50,^Added export .+$,Export,Add Export
+50,^Changed export .+$,Export,Change Export
+50,^Added import.*$,Other,Import
+50,^Added import data source .+$,Other,Add Import Data Source
+50,^Deleted import data source .+$,Other,Delete Import Data Source
+50,^Changed import data source .+$,Other,Change Import Data Source
+50,^Changed import .+$,Other,Change Import
+50,^Added dashboard .+$,Dashboard,Add Dashboard
+50,^Created dashboard .+$,Dashboard,Create Dashboard
+50,^Changed dashboard .+$,Dashboard,Change Dashboard
+50,^Added saved view .+$,Line Item/Property,Add Saved View
+50,^Added property .+$,Line Item/Property,Add Property
+50,^Changed property .+$,Line Item/Property,Change Property
+50,^Renamed action .+$,Action,Rename Action
+50,^Added line item read access driver write access driver.*$,Line Item/Property,Add Line Item Read Access Driver Write Access Driver
+50,^Added module read access driver write access driver.*$,Module/List,Add Module Read Access Driver Write Access Driver
+50,^Changed time scale.*$,Time Settings,Change Time Scale
+60,^Bulk data change:.*$,Line Item/Property,Bulk data change
+60,^Bulk data change \(add-in\).*$,Line Item/Property,Bulk data change (add-in)
+60,^Bulk model change.*$,Other,Bulk Model Change
+70,^Breakback data change affecting .+ cells$,Line Item/Property,Breakback data change affecting [x] cells
+80,^Begin sync revision.*$,Other,Begin sync revision
+80,^Sync revision completed.*$,Other,Sync revision completed
+80,^Sync revision unsuccessful.*$,Other,Sync revision unsuccessful
+80,^Revision added manually.*$,Other,Revision Added Manually by User
+80,^Revision synced.*$,Other,Revision Synced
+90,^Code changed.*$,Line Item/Property,Code Changed
+90,^Name changed.*$,Other,Name Changed
+90,^\d+ Item\(s\) Added$,Module/List,x Item(s) Added
+90,^\d+ Item\(s\) Deleted$,Module/List,x Item(s) Deleted
+90,^\d+ User\(s\) Deleted$,User,x User(s) Deleted
+100,^Data change.*$,Line Item/Property,Data Change
+999,.*,Other,Model change (no details available)
