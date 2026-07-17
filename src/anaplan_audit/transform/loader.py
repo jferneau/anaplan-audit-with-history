@@ -440,6 +440,8 @@ CREATE TABLE IF NOT EXISTS model_history_normalized (
     object              TEXT,
     target_user         TEXT,
     captured_at         TEXT NOT NULL,
+    change_type         TEXT,
+    object_type         TEXT,
     FOREIGN KEY (model_id) REFERENCES model_registry(model_id)
 )
 """
@@ -456,6 +458,11 @@ _NORMALIZED_MIGRATION_COLUMNS: list[tuple[str, str]] = [
     # "Target User" column in the Anaplan export CSV. Previously the
     # normalizer logged this as unmapped and dropped it.
     ("target_user", "TEXT"),
+    # v3.8.0 — derived classification columns from
+    # ``model_history.classification.classify()``. See
+    # ``MODEL_HISTORY_CLASSIFICATION_SCOPE.md`` §4.3.
+    ("change_type", "TEXT"),
+    ("object_type", "TEXT"),
 ]
 
 # Indexes on the columns most commonly filtered/joined in analytics queries.
@@ -558,7 +565,8 @@ def upsert_model_history(
                 list_rows,
             )
 
-            # model_history_normalized — ignore duplicates
+            # model_history_normalized — ignore duplicates.
+            # v3.8: change_type and object_type appended at the end.
             norm_cols = [
                 "record_id",
                 "anaplan_record_id",
@@ -579,6 +587,8 @@ def upsert_model_history(
                 "object",
                 "target_user",
                 "captured_at",
+                "change_type",
+                "object_type",
             ]
             norm_rows = [
                 tuple(r[c] for c in norm_cols) for _, r in model_history_normalized_df.iterrows()
